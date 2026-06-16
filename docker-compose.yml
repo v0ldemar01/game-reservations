@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: game_reservations
+    ports:
+      - '5452:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      # Context is monorepo root so the Dockerfile can reach packages/shared
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/game_reservations
+      PORT: 3000
+      FRONTEND_URL: http://localhost:5173
+      # REQUIRED: replace with a random string ≥ 32 characters before deploying
+      JWT_SECRET: change-me-to-a-long-random-secret-at-least-32-chars
+      JWT_EXPIRES_IN: 7d
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      # Context is monorepo root so the Dockerfile can reach packages/shared
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      # VITE_* vars are baked into the JS bundle at build time, not runtime.
+      # Pass them as build args so they reach the Vite build step inside Docker.
+      args:
+        VITE_GRAPHQL_URL: http://localhost:3000/graphql
+        VITE_API_URL: http://localhost:3000
+    restart: unless-stopped
+    ports:
+      - '5173:80'
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

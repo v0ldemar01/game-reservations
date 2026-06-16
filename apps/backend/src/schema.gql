@@ -1,0 +1,293 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type AnalyticsResult {
+  dailyUtilization: [DayUtilization!]!
+  peakHours: [HourlyCount!]!
+}
+
+type ArenaModel {
+  createdAt: DateTime!
+  id: ID!
+  name: String!
+}
+
+type ArenaUtilizationSummary {
+  arenaId: ID!
+  arenaName: String!
+  sessionCount: Int!
+  totalBookedMinutes: Int!
+}
+
+type AuthPayload {
+  token: String!
+  user: UserModel!
+}
+
+type AvailabilityResult {
+  available: Boolean!
+  suggestedSlots: [SlotSuggestion!]
+}
+
+input CheckAvailabilityInput {
+  arenaId: ID!
+  endTime: DateTime!
+
+  """
+  Exclude this session id when checking (for updates)
+  """
+  excludeSessionId: ID
+  startTime: DateTime!
+}
+
+input CreateRecurringInput {
+  arenaId: ID!
+  comment: String
+
+  """
+  0=Sun, 1=Mon, … 6=Sat
+  """
+  dayOfWeek: Int!
+  endHour: Int!
+  endMin: Int!
+  playerName: String
+  startHour: Int!
+  startMin: Int!
+  weeksAhead: Int! = 4
+}
+
+input CreateSessionInput {
+  arenaId: ID!
+  comment: String
+  endTime: DateTime!
+  playerName: String
+  startTime: DateTime!
+  status: SessionStatus
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+type DayUtilization {
+  bookedMinutes: Int!
+  date: String!
+  utilizationPercent: Float!
+}
+
+type HourlyCount {
+  count: Int!
+  hour: Int!
+}
+
+input JoinWaitlistInput {
+  arenaId: ID!
+  endTime: DateTime!
+  startTime: DateTime!
+}
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+type Mutation {
+  """
+  Cancel a recurring group (deletes all its sessions)
+  """
+  cancelRecurringGroup(futureOnly: Boolean! = false, groupId: ID!): Boolean!
+
+  """
+  Book a recurring weekly session
+  """
+  createRecurringSessions(input: CreateRecurringInput!): RecurringCreateResult!
+
+  """
+  Create a new session for an arena
+  """
+  createSession(input: CreateSessionInput!): SessionModel!
+
+  """
+  Delete a session by id
+  """
+  deleteSession(id: ID!): Boolean!
+
+  """
+  Join the waitlist for a time slot
+  """
+  joinWaitlist(input: JoinWaitlistInput!): WaitlistEntryModel!
+
+  """
+  Remove yourself from the waitlist
+  """
+  leaveWaitlist(id: ID!): Boolean!
+
+  """
+  Log in with email and password
+  """
+  login(input: LoginInput!): AuthPayload!
+
+  """
+  Register a new account
+  """
+  register(input: RegisterInput!): AuthPayload!
+
+  """
+  Update an existing session
+  """
+  updateSession(input: UpdateSessionInput!): SessionModel!
+}
+
+type Query {
+  """
+  Get a single arena by id
+  """
+  arena(id: ID!): ArenaModel!
+
+  """
+  Utilization analytics for a single arena
+  """
+  arenaAnalytics(
+    arenaId: ID!
+
+    """
+    ISO date string
+    """
+    from: String!
+
+    """
+    ISO date string
+    """
+    to: String!
+  ): AnalyticsResult!
+
+  """
+  List arenas ordered by name. Optionally filter by name substring (case-insensitive). Returns up to 50 results.
+  """
+  arenas(
+    """
+    Filter by name substring
+    """
+    search: String
+  ): [ArenaModel!]!
+
+  """
+  Top arenas by booked minutes (admin only)
+  """
+  busiestArenas(
+    from: String!
+    limit: Int! = 10
+    to: String!
+  ): [ArenaUtilizationSummary!]!
+
+  """
+  Check if a time slot is available and optionally return suggestions
+  """
+  checkAvailability(input: CheckAvailabilityInput!): AvailabilityResult!
+
+  """
+  Get your waitlist entries
+  """
+  myWaitlistEntries: [WaitlistEntryModel!]!
+
+  """
+  Get paginated sessions for an arena that overlap the given local-time day window
+  """
+  sessions(
+    arenaId: ID!
+    dayEnd: String!
+    dayStart: String!
+    page: Int! = 1
+    pageSize: Int! = 10
+  ): SessionsPage!
+}
+
+type RecurringCreateResult {
+  createdCount: Int!
+  group: RecurringGroupModel!
+  skippedCount: Int!
+}
+
+type RecurringGroupModel {
+  arenaId: ID!
+  comment: String
+  createdAt: DateTime!
+  dayOfWeek: Int!
+  endHour: Int!
+  endMin: Int!
+  id: ID!
+  playerName: String
+  startHour: Int!
+  startMin: Int!
+  userId: ID!
+  weeksAhead: Int!
+}
+
+input RegisterInput {
+  email: String!
+  password: String!
+}
+
+enum Role {
+  ADMIN
+  PLAYER
+}
+
+type SessionModel {
+  arenaId: ID!
+  comment: String
+  createdAt: DateTime!
+  endTime: DateTime!
+  id: ID!
+  playerName: String
+  recurringGroupId: ID
+  startTime: DateTime!
+  status: SessionStatus!
+  updatedAt: DateTime!
+  userId: ID
+}
+
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
+}
+
+type SessionsPage {
+  items: [SessionModel!]!
+  page: Int!
+  pageSize: Int!
+  total: Int!
+}
+
+type SlotSuggestion {
+  endTime: DateTime!
+  startTime: DateTime!
+}
+
+input UpdateSessionInput {
+  comment: String
+  endTime: DateTime
+  id: ID!
+  playerName: String
+  startTime: DateTime
+  status: SessionStatus
+}
+
+type UserModel {
+  createdAt: DateTime!
+  email: String!
+  id: ID!
+  role: Role!
+}
+
+type WaitlistEntryModel {
+  arenaId: ID!
+  createdAt: DateTime!
+  endTime: DateTime!
+  id: ID!
+  notifiedAt: DateTime
+  startTime: DateTime!
+  userId: ID!
+}

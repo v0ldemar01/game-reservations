@@ -1,0 +1,43 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+build
+
+# Environment files — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# Prisma generated client
+apps/backend/src/generated/
+
+# NestJS
+apps/backend/coverage/
+
+# Vite / frontend
+apps/frontend/coverage/
+
+# pnpm
+.pnpm-store/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Docker volumes (if ever mounted locally)
+postgres_data/

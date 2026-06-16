@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  PLAYER
+}
+
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
+}
+
+model User {
+  id              Int              @id @default(autoincrement())
+  email           String           @unique
+  passwordHash    String           @map("password_hash")
+  role            Role             @default(PLAYER)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  sessions        Session[]
+  recurringGroups RecurringGroup[]
+  waitlistEntries WaitlistEntry[]
+
+  @@map("users")
+}
+
+model Arena {
+  id              Int              @id @default(autoincrement())
+  name            String
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  sessions        Session[]
+  recurringGroups RecurringGroup[]
+  waitlistEntries WaitlistEntry[]
+
+  @@map("arenas")
+}
+
+model Session {
+  id               Int             @id @default(autoincrement())
+  arenaId          Int             @map("arena_id")
+  arena            Arena           @relation(fields: [arenaId], references: [id], onDelete: Cascade)
+  startTime        DateTime        @map("start_time") @db.Timestamptz
+  endTime          DateTime        @map("end_time") @db.Timestamptz
+  playerName       String?         @map("player_name")
+  comment          String?
+  status           SessionStatus   @default(ACTIVE)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+  userId           Int?            @map("user_id")
+  user             User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  recurringGroupId Int?            @map("recurring_group_id")
+  recurringGroup   RecurringGroup? @relation(fields: [recurringGroupId], references: [id], onDelete: SetNull)
+
+  @@index([arenaId, startTime, endTime], name: "idx_sessions_arena_time_range")
+  @@index([arenaId, startTime], name: "idx_sessions_arena_start")
+  @@map("sessions")
+}
+
+// Stores the rule for a weekly recurring booking.
+// Individual Session rows are created eagerly (one per occurrence) with recurringGroupId set.
+model RecurringGroup {
+  id         Int       @id @default(autoincrement())
+  arenaId    Int       @map("arena_id")
+  arena      Arena     @relation(fields: [arenaId], references: [id], onDelete: Cascade)
+  userId     Int       @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayOfWeek  Int       @map("day_of_week") // 0=Sun … 6=Sat
+  startHour  Int       @map("start_hour")
+  startMin   Int       @map("start_min")
+  endHour    Int       @map("end_hour")
+  endMin     Int       @map("end_min")
+  weeksAhead Int       @default(4) @map("weeks_ahead")
+  playerName String?   @map("player_name")
+  comment    String?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  sessions   Session[]
+
+  @@map("recurring_groups")
+}
+
+model WaitlistEntry {
+  id         Int       @id @default(autoincrement())
+  arenaId    Int       @map("arena_id")
+  arena      Arena     @relation(fields: [arenaId], references: [id], onDelete: Cascade)
+  userId     Int       @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startTime  DateTime  @map("start_time") @db.Timestamptz
+  endTime    DateTime  @map("end_time") @db.Timestamptz
+  notifiedAt DateTime? @map("notified_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([arenaId, startTime, endTime])
+  @@map("waitlist_entries")
+}

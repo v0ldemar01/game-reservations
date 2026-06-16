@@ -1,0 +1,16 @@
+packages:
+  - apps/*
+  - packages/*
+
+injectWorkspacePackages: true
+
+onlyBuiltDependencies:
+  - '@apollo/protobufjs'
+  - '@nestjs/core'
+  - '@prisma/client'
+  - '@prisma/engines'
+  - bcrypt
+  - esbuild
+  - prisma
+
+saveExact: true

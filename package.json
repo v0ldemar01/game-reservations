@@ -1,0 +1,17 @@
+{
+  "name": "game-reservations",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:shared": "pnpm --filter @game-reservations/shared build",
+    "build": "pnpm build:shared && pnpm --filter './apps/**' build",
+    "dev:backend": "pnpm --filter @game-reservations/backend start:dev",
+    "dev:frontend": "pnpm --filter @game-reservations/frontend dev",
+    "test": "pnpm --filter './apps/**' test",
+    "lint": "pnpm --filter './apps/**' --filter './packages/**' lint"
+  },
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=9"
+  }
+}
