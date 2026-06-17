@@ -1,14 +1,16 @@
-FROM node:22-alpine AS builder
+FROM node:22.21-alpine3.21 AS builder
 WORKDIR /app
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN apk add --no-cache openssl && corepack enable
 
-# Copy workspace manifests first for better layer caching
-COPY package.json pnpm-workspace.yaml ./
+FROM builder AS deps
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/backend/package.json ./apps/backend/
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
-RUN corepack enable && pnpm install --frozen-lockfile
-
-# Build shared package so apps/backend can resolve @game-reservations/shared
+FROM deps AS build
 COPY packages/shared ./packages/shared
 RUN pnpm --filter @game-reservations/shared build
 
@@ -16,20 +18,24 @@ COPY apps/backend ./apps/backend
 RUN pnpm --filter @game-reservations/backend db:generate
 RUN pnpm --filter @game-reservations/backend build
 
-FROM node:22-alpine AS runner
-WORKDIR /app
+FROM builder AS runtime
+ENV NODE_ENV=production
+RUN addgroup -S app && adduser -S -G app app
 
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/shared/package.json ./packages/shared/package.json
+COPY --from=build /app/packages/shared/dist ./packages/shared/dist
+COPY --from=build /app/apps/backend/node_modules ./apps/backend/node_modules
+COPY apps/backend/package.json ./apps/backend/package.json
+COPY --from=build /app/apps/backend/dist ./apps/backend/dist
+COPY --from=build /app/apps/backend/prisma ./apps/backend/prisma
 COPY package.json pnpm-workspace.yaml ./
-COPY packages/shared/package.json ./packages/shared/
-COPY apps/backend/package.json ./apps/backend/
 
-RUN corepack enable && pnpm install --frozen-lockfile --prod
-
-COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
-COPY --from=builder /app/apps/backend/node_modules/.prisma ./apps/backend/node_modules/.prisma
-COPY apps/backend/prisma ./apps/backend/prisma
+RUN chown -R app:app /app
+USER app
 
 WORKDIR /app/apps/backend
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/health', r => r.statusCode === 200 ? process.exit(0) : process.exit(1)).on('error', () => process.exit(1))"
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node dist/main"]

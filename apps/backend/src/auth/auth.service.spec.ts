@@ -1,7 +1,7 @@
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test, type TestingModule } from '@nestjs/testing';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { type ValueOf } from 'src/common/types/types';
 import { Role } from 'src/user/models/role.enum';
 import { UserService } from 'src/user/user.service';

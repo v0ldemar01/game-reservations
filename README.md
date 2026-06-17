@@ -276,27 +276,27 @@ The monorepo uses a unified linting and formatting pipeline enforced in CI and o
 
 ### Tools
 
-| Tool                          | Purpose                                                         |
-| ----------------------------- | --------------------------------------------------------------- |
-| ESLint 9 (flat config)        | JS/TS static analysis — bugs, style, complexity, import order   |
-| Prettier 3                    | Opinionated code formatter                                      |
-| TypeScript (`tsc --noEmit`)   | Full type-checking pass without emitting files                  |
-| ls-lint                       | Enforces consistent file and directory naming conventions       |
-| EditorConfig                  | Baseline whitespace and encoding settings for all editors       |
-| lint-staged                   | Runs the appropriate checks on staged files before each commit  |
+| Tool                        | Purpose                                                        |
+| --------------------------- | -------------------------------------------------------------- |
+| ESLint 9 (flat config)      | JS/TS static analysis — bugs, style, complexity, import order  |
+| Prettier 3                  | Opinionated code formatter                                     |
+| TypeScript (`tsc --noEmit`) | Full type-checking pass without emitting files                 |
+| ls-lint                     | Enforces consistent file and directory naming conventions      |
+| EditorConfig                | Baseline whitespace and encoding settings for all editors      |
+| lint-staged                 | Runs the appropriate checks on staged files before each commit |
 
 ### ESLint plugins active
 
-| Plugin                                 | What it catches                                                       |
-| -------------------------------------- | --------------------------------------------------------------------- |
-| `@typescript-eslint`                   | TypeScript-specific rules (unsafe types, redundant casts, etc.)       |
-| `@stylistic/eslint-plugin`             | Formatting rules (padding lines, bracket spacing, etc.)               |
-| `eslint-plugin-unicorn`                | Modern JS best-practices (prefer `.at()`, no `isNaN`, naming, etc.)  |
-| `eslint-plugin-sonarjs`                | Cognitive complexity limit (≤ 18), code smells                        |
-| `eslint-plugin-perfectionist`          | Alphabetical ordering of imports, exports, interfaces, and objects    |
-| `eslint-plugin-import`                 | Import existence, no cycles, exports-last ordering                    |
-| `eslint-plugin-jsdoc`                  | JSDoc consistency (backend only)                                      |
-| `eslint-plugin-require-explicit-generics` | Forces explicit type parameters on generic calls                  |
+| Plugin                                    | What it catches                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------- |
+| `@typescript-eslint`                      | TypeScript-specific rules (unsafe types, redundant casts, etc.)     |
+| `@stylistic/eslint-plugin`                | Formatting rules (padding lines, bracket spacing, etc.)             |
+| `eslint-plugin-unicorn`                   | Modern JS best-practices (prefer `.at()`, no `isNaN`, naming, etc.) |
+| `eslint-plugin-sonarjs`                   | Cognitive complexity limit (≤ 18), code smells                      |
+| `eslint-plugin-perfectionist`             | Alphabetical ordering of imports, exports, interfaces, and objects  |
+| `eslint-plugin-import`                    | Import existence, no cycles, exports-last ordering                  |
+| `eslint-plugin-jsdoc`                     | JSDoc consistency (backend only)                                    |
+| `eslint-plugin-require-explicit-generics` | Forces explicit type parameters on generic calls                    |
 
 ### Notable ESLint rules enforced
 
@@ -330,12 +330,12 @@ The monorepo uses a unified linting and formatting pipeline enforced in CI and o
 
 ### File naming rules (ls-lint)
 
-| Location            | Rule                              |
-| ------------------- | --------------------------------- |
-| Directories         | `kebab-case`                      |
-| All files           | `kebab-case`                      |
-| Prisma migrations   | `snake_case`                      |
-| `.github/` dirs     | `regex:[.]*[a-z]+`                |
+| Location          | Rule               |
+| ----------------- | ------------------ |
+| Directories       | `kebab-case`       |
+| All files         | `kebab-case`       |
+| Prisma migrations | `snake_case`       |
+| `.github/` dirs   | `regex:[.]*[a-z]+` |
 
 ### Available lint commands
 
