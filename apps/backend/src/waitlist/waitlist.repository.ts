@@ -1,60 +1,42 @@
-import { Injectable } from "@nestjs/common";
-import { Prisma, WaitlistEntry } from "@prisma/client";
-import { DatabaseService } from "src/database/database.service";
+import { Injectable } from '@nestjs/common';
+import { Prisma, WaitlistEntry } from '@prisma/client';
+import { DatabaseService } from 'src/database/database.service';
 
-export const WAITLIST_REPOSITORY = Symbol("WAITLIST_REPOSITORY");
-
+export const WAITLIST_REPOSITORY = Symbol('WAITLIST_REPOSITORY');
 export interface CreateWaitlistData {
   arenaId: number;
-  userId: number;
-  startTime: Date;
   endTime: Date;
+  startTime: Date;
+  userId: number;
 }
-
 export interface IWaitlistRepository {
   create(data: CreateWaitlistData): Promise<WaitlistEntry>;
-  findOne(id: number): Promise<WaitlistEntry | null>;
-  findByUserId(userId: number): Promise<WaitlistEntry[]>;
   delete(id: number): Promise<WaitlistEntry>;
+  findByUserId(userId: number): Promise<WaitlistEntry[]>;
   findFirstUnnotified(
     arenaId: number,
     startTime: Date,
     endTime: Date,
-    tx?: Prisma.TransactionClient,
-  ): Promise<WaitlistEntry | null>;
+    tx?: Prisma.TransactionClient
+  ): Promise<null | WaitlistEntry>;
+  findOne(id: number): Promise<null | WaitlistEntry>;
   markNotified(
     id: number,
-    tx?: Prisma.TransactionClient,
+    tx?: Prisma.TransactionClient
   ): Promise<WaitlistEntry>;
 }
-
 @Injectable()
 export class WaitlistRepository implements IWaitlistRepository {
   constructor(private readonly db: DatabaseService) {}
-
-  private client(tx?: Prisma.TransactionClient) {
-    return tx ?? this.db;
-  }
 
   create(data: CreateWaitlistData): Promise<WaitlistEntry> {
     return this.db.waitlistEntry.create({
       data: {
         arenaId: data.arenaId,
-        userId: data.userId,
-        startTime: data.startTime,
         endTime: data.endTime,
-      },
-    });
-  }
-
-  findOne(id: number): Promise<WaitlistEntry | null> {
-    return this.db.waitlistEntry.findUnique({ where: { id } });
-  }
-
-  findByUserId(userId: number): Promise<WaitlistEntry[]> {
-    return this.db.waitlistEntry.findMany({
-      where: { userId },
-      orderBy: { createdAt: "asc" },
+        startTime: data.startTime,
+        userId: data.userId
+      }
     });
   }
 
@@ -62,30 +44,47 @@ export class WaitlistRepository implements IWaitlistRepository {
     return this.db.waitlistEntry.delete({ where: { id } });
   }
 
+  findByUserId(userId: number): Promise<WaitlistEntry[]> {
+    return this.db.waitlistEntry.findMany({
+      orderBy: { createdAt: 'asc' },
+      where: { userId }
+    });
+  }
+
   findFirstUnnotified(
     arenaId: number,
     startTime: Date,
     endTime: Date,
-    tx?: Prisma.TransactionClient,
-  ): Promise<WaitlistEntry | null> {
+    tx?: Prisma.TransactionClient
+  ): Promise<null | WaitlistEntry> {
     return this.client(tx).waitlistEntry.findFirst({
+      orderBy: { createdAt: 'asc' },
       where: {
         arenaId,
-        startTime: { lte: startTime },
         endTime: { gte: endTime },
         notifiedAt: null,
-      },
-      orderBy: { createdAt: "asc" },
+        startTime: { lte: startTime }
+      }
     });
+  }
+
+  findOne(id: number): Promise<null | WaitlistEntry> {
+    return this.db.waitlistEntry.findUnique({ where: { id } });
   }
 
   markNotified(
     id: number,
-    tx?: Prisma.TransactionClient,
+    tx?: Prisma.TransactionClient
   ): Promise<WaitlistEntry> {
     return this.client(tx).waitlistEntry.update({
-      where: { id },
       data: { notifiedAt: new Date() },
+      where: { id }
     });
+  }
+
+  private client(
+    tx?: Prisma.TransactionClient
+  ): DatabaseService | Prisma.TransactionClient {
+    return tx ?? this.db;
   }
 }

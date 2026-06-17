@@ -1,18 +1,13 @@
-import { InputType, Field, ID } from "@nestjs/graphql";
-import { IsInt, IsDate, IsOptional } from "class-validator";
-import { Type } from "class-transformer";
+import { Field, ID, InputType } from '@nestjs/graphql';
+import { Type } from 'class-transformer';
+import { IsDate, IsInt, IsOptional } from 'class-validator';
 
 @InputType()
 export class CheckAvailabilityInput {
   @Field(() => ID)
-  @Type(() => Number)
   @IsInt()
+  @Type(() => Number)
   arenaId!: number;
-
-  @Field()
-  @IsDate()
-  @Type(() => Date)
-  startTime!: Date;
 
   @Field()
   @IsDate()
@@ -20,11 +15,16 @@ export class CheckAvailabilityInput {
   endTime!: Date;
 
   @Field(() => ID, {
-    nullable: true,
-    description: "Exclude this session id when checking (for updates)",
+    description: 'Exclude this session id when checking (for updates)',
+    nullable: true
   })
+  @IsInt()
   @IsOptional()
   @Type(() => Number)
-  @IsInt()
   excludeSessionId?: number;
+
+  @Field()
+  @IsDate()
+  @Type(() => Date)
+  startTime!: Date;
 }

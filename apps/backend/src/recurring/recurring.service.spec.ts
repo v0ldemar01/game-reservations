@@ -1,65 +1,66 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { Prisma } from "@prisma/client";
-import { RecurringService } from "./recurring.service";
-import { DatabaseService } from "src/database/database.service";
+import { MAX_CONCURRENT_SESSIONS } from '@game-reservations/shared';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
+import { AdvisoryLocks } from 'src/common/advisory-locks';
+import { DatabaseService } from 'src/database/database.service';
 import {
-  IRecurringRepository,
-  RECURRING_REPOSITORY,
-} from "./recurring.repository";
+  type ISessionRepository,
+  SESSION_REPOSITORY
+} from 'src/session/session.repository';
+
 import {
-  ISessionRepository,
-  SESSION_REPOSITORY,
-} from "src/session/session.repository";
-import { AdvisoryLocks } from "src/common/advisory-locks";
-import { MAX_CONCURRENT_SESSIONS } from "@game-reservations/shared";
+  type IRecurringRepository,
+  RECURRING_REPOSITORY
+} from './recurring.repository';
+import { RecurringService } from './recurring.service';
 
 const REPEATABLE_READ = Prisma.TransactionIsolationLevel.RepeatableRead;
 
 function makeGroup(
   overrides: Partial<{
-    id: number;
     arenaId: number;
-    userId: number;
+    comment: null | string;
+    createdAt: Date;
     dayOfWeek: number;
-    startHour: number;
-    startMin: number;
     endHour: number;
     endMin: number;
-    weeksAhead: number;
-    playerName: string | null;
-    comment: string | null;
-    createdAt: Date;
+    id: number;
+    playerName: null | string;
+    startHour: number;
+    startMin: number;
     updatedAt: Date;
-  }> = {},
+    userId: number;
+    weeksAhead: number;
+  }> = {}
 ) {
   return {
-    id: 1,
     arenaId: 1,
-    userId: 10,
-    dayOfWeek: 1,
-    startHour: 10,
-    startMin: 0,
-    endHour: 11,
-    endMin: 0,
-    weeksAhead: 4,
-    playerName: null,
     comment: null,
     createdAt: new Date(),
+    dayOfWeek: 1,
+    endHour: 11,
+    endMin: 0,
+    id: 1,
+    playerName: null,
+    startHour: 10,
+    startMin: 0,
     updatedAt: new Date(),
-    ...overrides,
+    userId: 10,
+    weeksAhead: 4,
+    ...overrides
   };
 }
 
-describe("RecurringService", () => {
+describe('RecurringService', () => {
   let service: RecurringService;
   let recurringRepo: jest.Mocked<IRecurringRepository>;
   let sessionRepo: jest.Mocked<
-    Pick<ISessionRepository, "countOverlapping" | "create">
+    Pick<ISessionRepository, 'countOverlapping' | 'create'>
   >;
   let db: {
-    withTransaction: jest.Mock;
-    withAdvisoryXactLock: jest.Mock;
     user: { findUnique: jest.Mock };
+    withAdvisoryXactLock: jest.Mock;
+    withTransaction: jest.Mock;
   };
 
   const mockTx = {} as Prisma.TransactionClient;
@@ -67,30 +68,29 @@ describe("RecurringService", () => {
   beforeEach(async () => {
     recurringRepo = {
       createGroup: jest.fn(),
-      findGroup: jest.fn(),
-      findGroupOrThrow: jest.fn(),
       deleteGroup: jest.fn(),
       deleteSessions: jest.fn().mockResolvedValue(undefined),
+      findGroup: jest.fn(),
+      findGroupOrThrow: jest.fn()
     };
 
     sessionRepo = {
       countOverlapping: jest.fn().mockResolvedValue(0),
-      create: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({})
     };
 
     db = {
-      withTransaction: jest
-        .fn()
-        .mockImplementation(
-          (fn: (tx: unknown) => Promise<unknown>, _opts?: unknown) =>
-            fn(mockTx),
-        ),
+      user: { findUnique: jest.fn() },
       withAdvisoryXactLock: jest
         .fn()
         .mockImplementation(
-          (_tx: unknown, _key: unknown, fn: () => Promise<unknown>) => fn(),
+          (_tx: unknown, _key: unknown, fn: () => Promise<unknown>) => fn()
         ),
-      user: { findUnique: jest.fn() },
+      withTransaction: jest
+        .fn()
+        .mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
+          fn(mockTx)
+        )
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -98,8 +98,8 @@ describe("RecurringService", () => {
         RecurringService,
         { provide: RECURRING_REPOSITORY, useValue: recurringRepo },
         { provide: SESSION_REPOSITORY, useValue: sessionRepo },
-        { provide: DatabaseService, useValue: db },
-      ],
+        { provide: DatabaseService, useValue: db }
+      ]
     }).compile();
 
     service = module.get(RecurringService);
@@ -109,41 +109,41 @@ describe("RecurringService", () => {
   // createRecurring
   // ---------------------------------------------------------------------------
 
-  describe("createRecurring", () => {
+  describe('createRecurring', () => {
     const baseInput = {
-      arenaId: "1",
+      arenaId: '1',
+      comment: undefined,
       dayOfWeek: 1, // Monday
-      startHour: 10,
-      startMin: 0,
       endHour: 11,
       endMin: 0,
-      weeksAhead: 4,
       playerName: undefined,
-      comment: undefined,
+      startHour: 10,
+      startMin: 0,
+      weeksAhead: 4
     };
 
-    it("creates the group before entering the transaction", async () => {
+    it('creates the group before entering the transaction', async () => {
       const group = makeGroup();
       recurringRepo.createGroup.mockResolvedValue(group);
 
       await service.createRecurring(baseInput, 10);
 
       expect(recurringRepo.createGroup).toHaveBeenCalledWith(
-        expect.objectContaining({ arenaId: 1, userId: 10 }),
+        expect.objectContaining({ arenaId: 1, userId: 10 })
       );
     });
 
-    it("uses RepeatableRead isolation for the transaction", async () => {
+    it('uses RepeatableRead isolation for the transaction', async () => {
       recurringRepo.createGroup.mockResolvedValue(makeGroup());
 
       await service.createRecurring(baseInput, 10);
 
       expect(db.withTransaction).toHaveBeenCalledWith(expect.any(Function), {
-        isolationLevel: REPEATABLE_READ,
+        isolationLevel: REPEATABLE_READ
       });
     });
 
-    it("acquires recurringCreate advisory lock for the arenaId", async () => {
+    it('acquires recurringCreate advisory lock for the arenaId', async () => {
       recurringRepo.createGroup.mockResolvedValue(makeGroup());
 
       await service.createRecurring(baseInput, 10);
@@ -151,11 +151,11 @@ describe("RecurringService", () => {
       expect(db.withAdvisoryXactLock).toHaveBeenCalledWith(
         mockTx,
         AdvisoryLocks.recurringCreate(1),
-        expect.any(Function),
+        expect.any(Function)
       );
     });
 
-    it("creates one session per occurrence when all slots are free", async () => {
+    it('creates one session per occurrence when all slots are free', async () => {
       recurringRepo.createGroup.mockResolvedValue(makeGroup());
       sessionRepo.countOverlapping.mockResolvedValue(0);
 
@@ -166,7 +166,7 @@ describe("RecurringService", () => {
       expect(sessionRepo.create).toHaveBeenCalledTimes(baseInput.weeksAhead);
     });
 
-    it("skips occurrences when MAX_CONCURRENT_SESSIONS is reached", async () => {
+    it('skips occurrences when MAX_CONCURRENT_SESSIONS is reached', async () => {
       recurringRepo.createGroup.mockResolvedValue(makeGroup());
       // First 2 slots full, remaining free
       sessionRepo.countOverlapping
@@ -180,7 +180,7 @@ describe("RecurringService", () => {
       expect(result.createdCount).toBe(baseInput.weeksAhead - 2);
     });
 
-    it("attaches recurringGroupId to created sessions", async () => {
+    it('attaches recurringGroupId to created sessions', async () => {
       const group = makeGroup({ id: 99 });
       recurringRepo.createGroup.mockResolvedValue(group);
       sessionRepo.countOverlapping.mockResolvedValue(0);
@@ -189,19 +189,19 @@ describe("RecurringService", () => {
 
       expect(sessionRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ recurringGroupId: 99 }),
-        mockTx,
+        mockTx
       );
     });
 
-    it("returns group, createdCount, skippedCount", async () => {
+    it('returns group, createdCount, skippedCount', async () => {
       const group = makeGroup();
       recurringRepo.createGroup.mockResolvedValue(group);
 
       const result = await service.createRecurring(baseInput, 10);
 
       expect(result.group).toEqual(group);
-      expect(typeof result.createdCount).toBe("number");
-      expect(typeof result.skippedCount).toBe("number");
+      expect(typeof result.createdCount).toBe('number');
+      expect(typeof result.skippedCount).toBe('number');
     });
   });
 
@@ -209,8 +209,8 @@ describe("RecurringService", () => {
   // cancelGroup
   // ---------------------------------------------------------------------------
 
-  describe("cancelGroup", () => {
-    it("allows owner to cancel their group", async () => {
+  describe('cancelGroup', () => {
+    it('allows owner to cancel their group', async () => {
       const group = makeGroup({ userId: 10 });
       recurringRepo.findGroupOrThrow.mockResolvedValue(group);
       recurringRepo.deleteGroup.mockResolvedValue(group);
@@ -220,26 +220,26 @@ describe("RecurringService", () => {
       expect(recurringRepo.deleteSessions).toHaveBeenCalledWith(
         1,
         false,
-        mockTx,
+        mockTx
       );
       expect(recurringRepo.deleteGroup).toHaveBeenCalledWith(1, mockTx);
       expect(result).toBe(true);
     });
 
-    it("throws when non-owner non-admin tries to cancel", async () => {
+    it('throws when non-owner non-admin tries to cancel', async () => {
       const group = makeGroup({ userId: 10 });
       recurringRepo.findGroupOrThrow.mockResolvedValue(group);
-      db.user.findUnique.mockResolvedValue({ id: 99, role: "PLAYER" });
+      db.user.findUnique.mockResolvedValue({ id: 99, role: 'PLAYER' });
 
       await expect(service.cancelGroup(1, 99, false)).rejects.toThrow(
-        "Forbidden",
+        'Forbidden'
       );
     });
 
-    it("allows ADMIN to cancel any group", async () => {
+    it('allows ADMIN to cancel any group', async () => {
       const group = makeGroup({ userId: 10 });
       recurringRepo.findGroupOrThrow.mockResolvedValue(group);
-      db.user.findUnique.mockResolvedValue({ id: 99, role: "ADMIN" });
+      db.user.findUnique.mockResolvedValue({ id: 99, role: 'ADMIN' });
       recurringRepo.deleteGroup.mockResolvedValue(group);
 
       const result = await service.cancelGroup(1, 99, false);
@@ -247,7 +247,7 @@ describe("RecurringService", () => {
       expect(result).toBe(true);
     });
 
-    it("passes futureOnly=true to deleteSessions", async () => {
+    it('passes futureOnly=true to deleteSessions', async () => {
       const group = makeGroup({ userId: 10 });
       recurringRepo.findGroupOrThrow.mockResolvedValue(group);
       recurringRepo.deleteGroup.mockResolvedValue(group);
@@ -257,7 +257,7 @@ describe("RecurringService", () => {
       expect(recurringRepo.deleteSessions).toHaveBeenCalledWith(
         1,
         true,
-        mockTx,
+        mockTx
       );
     });
   });

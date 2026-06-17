@@ -1,95 +1,100 @@
-import { Test, TestingModule } from "@nestjs/testing";
 import {
   BadRequestException,
   ConflictException,
-  NotFoundException,
-} from "@nestjs/common";
-import { Prisma } from "@prisma/client";
-import { SessionService } from "./session.service";
-import { DatabaseService } from "src/database/database.service";
-import { ISessionRepository, SESSION_REPOSITORY } from "./session.repository";
-import { AdvisoryLocks } from "src/common/advisory-locks";
-import { SessionStatus } from "./models/session-status.enum";
+  NotFoundException
+} from '@nestjs/common';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { type Prisma } from '@prisma/client';
+import { AdvisoryLocks } from 'src/common/advisory-locks';
+import { DatabaseService } from 'src/database/database.service';
+
+import { SessionStatus } from './models/session-status.enum';
+import {
+  type ISessionRepository,
+  SESSION_REPOSITORY
+} from './session.repository';
+import { SessionService } from './session.service';
 
 const ARENA_ID = 1;
 
 function makeDate(
   hoursOffset: number,
-  base = new Date("2024-01-15T10:00:00Z"),
+  base = new Date('2024-01-15T10:00:00Z')
 ): Date {
   return new Date(base.getTime() + hoursOffset * 3_600_000);
 }
 
 function makeSession(
   overrides: Partial<{
-    id: number;
     arenaId: number;
-    startTime: Date;
-    endTime: Date;
-    playerName: string | null;
-    comment: string | null;
-    status: SessionStatus;
-    userId: number | null;
-    recurringGroupId: number | null;
+    comment: null | string;
     createdAt: Date;
+    endTime: Date;
+    id: number;
+    playerName: null | string;
+    recurringGroupId: null | number;
+    startTime: Date;
+    status: SessionStatus;
     updatedAt: Date;
-  }> = {},
+    userId: null | number;
+  }> = {}
 ) {
   const now = new Date();
+
   return {
-    id: 1,
     arenaId: ARENA_ID,
-    startTime: makeDate(0),
-    endTime: makeDate(1),
-    playerName: null,
     comment: null,
-    status: SessionStatus.ACTIVE,
-    userId: null,
-    recurringGroupId: null,
     createdAt: now,
+    endTime: makeDate(1),
+    id: 1,
+    playerName: null,
+    recurringGroupId: null,
+    startTime: makeDate(0),
+    status: SessionStatus.ACTIVE,
     updatedAt: now,
-    ...overrides,
+    userId: null,
+    ...overrides
   };
 }
 
-describe("SessionService", () => {
+describe('SessionService', () => {
   let service: SessionService;
   let sessionRepo: jest.Mocked<ISessionRepository>;
-  let db: { withTransaction: jest.Mock; withAdvisoryXactLock: jest.Mock };
+  let db: { withAdvisoryXactLock: jest.Mock; withTransaction: jest.Mock };
 
   const mockTx = {} as Prisma.TransactionClient;
 
   beforeEach(async () => {
     sessionRepo = {
-      findByArenaAndDateRange: jest.fn(),
-      findOne: jest.fn(),
       countOverlapping: jest.fn(),
-      lockOverlappingRows: jest.fn().mockResolvedValue(undefined),
-      findEndTimesInRange: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
-      update: jest.fn(),
       delete: jest.fn(),
+      findByArenaAndDateRange: jest.fn(),
+      findEndTimesInRange: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn(),
+      lockOverlappingRows: jest.fn().mockResolvedValue(undefined),
+      update: jest.fn()
     };
 
     db = {
-      withTransaction: jest
-        .fn()
-        .mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
-          fn(mockTx),
-        ),
       withAdvisoryXactLock: jest
         .fn()
         .mockImplementation(
-          (_tx: unknown, _key: unknown, fn: () => Promise<unknown>) => fn(),
+          (_tx: unknown, _key: unknown, fn: () => Promise<unknown>) => fn()
         ),
+      withTransaction: jest
+        .fn()
+        .mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
+          fn(mockTx)
+        )
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SessionService,
         { provide: SESSION_REPOSITORY, useValue: sessionRepo },
-        { provide: DatabaseService, useValue: db },
-      ],
+        { provide: DatabaseService, useValue: db }
+      ]
     }).compile();
 
     service = module.get(SessionService);
@@ -99,69 +104,69 @@ describe("SessionService", () => {
   // Duration validation
   // ---------------------------------------------------------------------------
 
-  describe("validateDuration", () => {
-    it("throws BadRequestException when end <= start", async () => {
+  describe('validateDuration', () => {
+    it('throws BadRequestException when end <= start', async () => {
       await expect(
         service.createSession({
           arenaId: ARENA_ID,
-          startTime: makeDate(1),
           endTime: makeDate(0),
-        }),
+          startTime: makeDate(1)
+        })
       ).rejects.toThrow(BadRequestException);
       expect(db.withTransaction).not.toHaveBeenCalled();
     });
 
-    it("throws when duration < 5 minutes", async () => {
+    it('throws when duration < 5 minutes', async () => {
       const start = makeDate(0);
       await expect(
         service.createSession({
           arenaId: ARENA_ID,
-          startTime: start,
           endTime: new Date(start.getTime() + 4 * 60_000),
-        }),
+          startTime: start
+        })
       ).rejects.toThrow(BadRequestException);
     });
 
-    it("throws when duration > 24 hours", async () => {
+    it('throws when duration > 24 hours', async () => {
       const start = makeDate(0);
       await expect(
         service.createSession({
           arenaId: ARENA_ID,
-          startTime: start,
           endTime: new Date(start.getTime() + 25 * 3_600_000),
-        }),
+          startTime: start
+        })
       ).rejects.toThrow(BadRequestException);
     });
 
-    it("accepts exactly 5 minutes", async () => {
+    it('accepts exactly 5 minutes', async () => {
       const start = makeDate(0);
       const end = new Date(start.getTime() + 5 * 60_000);
-      const created = makeSession({ startTime: start, endTime: end });
+      const created = makeSession({ endTime: end, startTime: start });
       sessionRepo.countOverlapping.mockResolvedValue(0);
       sessionRepo.create.mockResolvedValue(created);
 
       await expect(
         service.createSession({
           arenaId: ARENA_ID,
-          startTime: start,
           endTime: end,
-        }),
+          startTime: start
+        })
       ).resolves.toEqual(created);
     });
 
-    it("accepts exactly 24 hours", async () => {
+    it('accepts exactly 24 hours', async () => {
       const start = makeDate(0);
       const end = new Date(start.getTime() + 24 * 3_600_000);
-      const created = makeSession({ startTime: start, endTime: end });
+      const created = makeSession({ endTime: end, startTime: start });
       sessionRepo.countOverlapping.mockResolvedValue(0);
       sessionRepo.create.mockResolvedValue(created);
 
       await expect(
         service.createSession({
           arenaId: ARENA_ID,
-          startTime: start,
           endTime: end,
-        }),
+          startTime: start
+        })
       ).resolves.toEqual(created);
     });
   });
@@ -170,63 +175,63 @@ describe("SessionService", () => {
   // createSession
   // ---------------------------------------------------------------------------
 
-  describe("createSession", () => {
+  describe('createSession', () => {
     const start = makeDate(0);
     const end = makeDate(1);
 
-    it("acquires advisory xact lock with correct arenaId key", async () => {
+    it('acquires advisory xact lock with correct arenaId key', async () => {
       sessionRepo.countOverlapping.mockResolvedValue(0);
       sessionRepo.create.mockResolvedValue(makeSession());
 
       await service.createSession({
         arenaId: ARENA_ID,
-        startTime: start,
         endTime: end,
+        startTime: start
       });
 
       expect(db.withAdvisoryXactLock).toHaveBeenCalledWith(
         mockTx,
         AdvisoryLocks.sessionWrite(ARENA_ID),
-        expect.any(Function),
+        expect.any(Function)
       );
     });
 
-    it("calls lockOverlappingRows with tx", async () => {
+    it('calls lockOverlappingRows with tx', async () => {
       sessionRepo.countOverlapping.mockResolvedValue(0);
       sessionRepo.create.mockResolvedValue(makeSession());
 
       await service.createSession({
         arenaId: ARENA_ID,
-        startTime: start,
         endTime: end,
+        startTime: start
       });
 
       expect(sessionRepo.lockOverlappingRows).toHaveBeenCalledWith(
         mockTx,
         ARENA_ID,
         start,
-        end,
+        end
       );
     });
 
-    it("throws ConflictException with suggestedSlots when 5 overlap", async () => {
+    it('throws ConflictException with suggestedSlots when 5 overlap', async () => {
       sessionRepo.countOverlapping
         .mockResolvedValueOnce(5) // inside tx — triggers conflict
         .mockResolvedValue(0); // inside findSuggestedSlots probes
       sessionRepo.findEndTimesInRange.mockResolvedValue([]);
 
-      const err = await service
-        .createSession({ arenaId: ARENA_ID, startTime: start, endTime: end })
-        .catch((e) => e);
+      const error = await service
+        .createSession({ arenaId: ARENA_ID, endTime: end, startTime: start })
+        .catch((error_) => error_);
 
-      expect(err).toBeInstanceOf(ConflictException);
-      expect(err.getResponse()).toMatchObject({
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toMatchObject({
         message: expect.any(String),
-        suggestedSlots: expect.any(Array),
+        suggestedSlots: expect.any(Array)
       });
     });
 
-    it("succeeds when exactly 4 sessions overlap", async () => {
+    it('succeeds when exactly 4 sessions overlap', async () => {
       const created = makeSession();
       sessionRepo.countOverlapping.mockResolvedValue(4);
       sessionRepo.create.mockResolvedValue(created);
@@ -234,30 +239,30 @@ describe("SessionService", () => {
       await expect(
         service.createSession({
           arenaId: ARENA_ID,
-          startTime: start,
           endTime: end,
-        }),
+          startTime: start
+        })
       ).resolves.toEqual(created);
       expect(sessionRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ arenaId: ARENA_ID }),
-        mockTx,
+        mockTx
       );
     });
 
-    it("passes userId to create when provided", async () => {
+    it('passes userId to create when provided', async () => {
       sessionRepo.countOverlapping.mockResolvedValue(0);
       sessionRepo.create.mockResolvedValue(makeSession({ userId: 7 }));
 
       await service.createSession({
         arenaId: ARENA_ID,
-        startTime: start,
         endTime: end,
-        userId: 7,
+        startTime: start,
+        userId: 7
       });
 
       expect(sessionRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 7 }),
-        mockTx,
+        mockTx
       );
     });
   });
@@ -266,15 +271,15 @@ describe("SessionService", () => {
   // updateSession
   // ---------------------------------------------------------------------------
 
-  describe("updateSession", () => {
-    it("throws NotFoundException when session does not exist", async () => {
+  describe('updateSession', () => {
+    it('throws NotFoundException when session does not exist', async () => {
       sessionRepo.findOne.mockResolvedValue(null);
       await expect(service.updateSession({ id: 99 })).rejects.toThrow(
-        NotFoundException,
+        NotFoundException
       );
     });
 
-    it("wraps in a transaction and excludes self from overlap count", async () => {
+    it('wraps in a transaction and excludes self from overlap count', async () => {
       const existing = makeSession({ id: 42 });
       sessionRepo.findOne.mockResolvedValue(existing);
       sessionRepo.countOverlapping.mockResolvedValue(3);
@@ -288,11 +293,11 @@ describe("SessionService", () => {
         expect.any(Date),
         expect.any(Date),
         42,
-        mockTx,
+        mockTx
       );
     });
 
-    it("calls lockOverlappingRows with excludeId", async () => {
+    it('calls lockOverlappingRows with excludeId', async () => {
       const existing = makeSession({ id: 42 });
       sessionRepo.findOne.mockResolvedValue(existing);
       sessionRepo.countOverlapping.mockResolvedValue(0);
@@ -305,12 +310,12 @@ describe("SessionService", () => {
         existing.arenaId,
         expect.any(Date),
         expect.any(Date),
-        42,
+        42
       );
     });
 
-    it("acquires advisory xact lock with arenaId from existing session", async () => {
-      const existing = makeSession({ id: 42, arenaId: 7 });
+    it('acquires advisory xact lock with arenaId from existing session', async () => {
+      const existing = makeSession({ arenaId: 7, id: 42 });
       sessionRepo.findOne.mockResolvedValue(existing);
       sessionRepo.countOverlapping.mockResolvedValue(0);
       sessionRepo.update.mockResolvedValue(existing);
@@ -320,7 +325,7 @@ describe("SessionService", () => {
       expect(db.withAdvisoryXactLock).toHaveBeenCalledWith(
         mockTx,
         AdvisoryLocks.sessionWrite(7),
-        expect.any(Function),
+        expect.any(Function)
       );
     });
   });
@@ -329,21 +334,21 @@ describe("SessionService", () => {
   // findOne / deleteSession
   // ---------------------------------------------------------------------------
 
-  describe("findOne", () => {
-    it("throws NotFoundException when not found", async () => {
+  describe('findOne', () => {
+    it('throws NotFoundException when not found', async () => {
       sessionRepo.findOne.mockResolvedValue(null);
       await expect(service.findOne(999)).rejects.toThrow(NotFoundException);
     });
 
-    it("returns session when found", async () => {
+    it('returns session when found', async () => {
       const session = makeSession();
       sessionRepo.findOne.mockResolvedValue(session);
       await expect(service.findOne(1)).resolves.toEqual(session);
     });
   });
 
-  describe("deleteSession", () => {
-    it("delegates to sessionRepo.delete", async () => {
+  describe('deleteSession', () => {
+    it('delegates to sessionRepo.delete', async () => {
       const session = makeSession();
       sessionRepo.findOne.mockResolvedValue(session);
       sessionRepo.delete.mockResolvedValue(session);
@@ -352,10 +357,10 @@ describe("SessionService", () => {
       expect(sessionRepo.delete).toHaveBeenCalledWith(1);
     });
 
-    it("throws NotFoundException for non-existent session", async () => {
+    it('throws NotFoundException for non-existent session', async () => {
       sessionRepo.findOne.mockResolvedValue(null);
       await expect(service.deleteSession(999)).rejects.toThrow(
-        NotFoundException,
+        NotFoundException
       );
     });
   });
@@ -364,18 +369,18 @@ describe("SessionService", () => {
   // checkAvailability
   // ---------------------------------------------------------------------------
 
-  describe("checkAvailability", () => {
+  describe('checkAvailability', () => {
     const start = makeDate(0);
     const end = makeDate(1);
 
-    it("returns available:true when overlap count < 5", async () => {
+    it('returns available:true when overlap count < 5', async () => {
       sessionRepo.countOverlapping.mockResolvedValue(4);
       await expect(
-        service.checkAvailability(ARENA_ID, start, end),
+        service.checkAvailability(ARENA_ID, start, end)
       ).resolves.toEqual({ available: true });
     });
 
-    it("returns available:false with suggestedSlots when overlap count = 5", async () => {
+    it('returns available:false with suggestedSlots when overlap count = 5', async () => {
       sessionRepo.countOverlapping
         .mockResolvedValueOnce(5) // initial check
         .mockResolvedValue(0); // suggestion probes
@@ -387,7 +392,7 @@ describe("SessionService", () => {
       expect(result.suggestedSlots).toBeInstanceOf(Array);
     });
 
-    it("passes excludeSessionId to countOverlapping", async () => {
+    it('passes excludeSessionId to countOverlapping', async () => {
       sessionRepo.countOverlapping.mockResolvedValue(0);
 
       await service.checkAvailability(ARENA_ID, start, end, 42);
@@ -396,7 +401,7 @@ describe("SessionService", () => {
         ARENA_ID,
         start,
         end,
-        42,
+        42
       );
     });
   });
@@ -405,22 +410,22 @@ describe("SessionService", () => {
   // findByArenaAndDateRange
   // ---------------------------------------------------------------------------
 
-  describe("findByArenaAndDateRange", () => {
-    it("delegates to sessionRepo", async () => {
-      const result = { items: [], total: 0, page: 1, pageSize: 10 };
+  describe('findByArenaAndDateRange', () => {
+    it('delegates to sessionRepo', async () => {
+      const result = { items: [], page: 1, pageSize: 10, total: 0 };
       sessionRepo.findByArenaAndDateRange.mockResolvedValue(result);
 
       const dayStart = makeDate(0);
       const dayEnd = makeDate(24);
       await expect(
-        service.findByArenaAndDateRange(ARENA_ID, dayStart, dayEnd, 1, 10),
+        service.findByArenaAndDateRange(ARENA_ID, dayStart, dayEnd, 1, 10)
       ).resolves.toEqual(result);
       expect(sessionRepo.findByArenaAndDateRange).toHaveBeenCalledWith(
         ARENA_ID,
         dayStart,
         dayEnd,
         1,
-        10,
+        10
       );
     });
   });
@@ -429,20 +434,20 @@ describe("SessionService", () => {
   // Boundary: touching sessions must NOT conflict
   // ---------------------------------------------------------------------------
 
-  describe("boundary sessions", () => {
-    it("allows session starting exactly when another ends (count=0)", async () => {
+  describe('boundary sessions', () => {
+    it('allows session starting exactly when another ends (count=0)', async () => {
       const start = makeDate(1);
       const end = makeDate(2);
-      const created = makeSession({ id: 2, startTime: start, endTime: end });
+      const created = makeSession({ endTime: end, id: 2, startTime: start });
       sessionRepo.countOverlapping.mockResolvedValue(0);
       sessionRepo.create.mockResolvedValue(created);
 
       await expect(
         service.createSession({
           arenaId: ARENA_ID,
-          startTime: start,
           endTime: end,
-        }),
+          startTime: start
+        })
       ).resolves.toEqual(created);
     });
   });

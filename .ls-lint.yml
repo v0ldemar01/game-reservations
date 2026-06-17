@@ -1,0 +1,37 @@
+ls:
+  .dir: kebab-case
+  .*: kebab-case
+  .*.*: kebab-case
+
+  .github:
+    .dir: regex:[.]*[a-z]+
+    .yml: kebab-case
+
+    ISSUE_TEMPLATE:
+      .dir: SCREAMING_SNAKE_CASE
+      .yml: kebab-case
+
+  '**/migrations':
+    .ts: snake_case
+
+  '**/seeds':
+    .ts: snake_case
+
+  '**/chunks':
+    .json: snake_case
+
+ignore:
+  - README.md
+  - '**/README.md'
+  - .git
+  - .claude
+  - .vscode
+  - '**/node_modules'
+  - '**/build'
+  - '**/dist'
+  - '**/cdk.out'
+  - '**/dev-dist'
+  - '**/CHANGELOG.md'
+  - '.vscode'
+  - '.platform'
+  - 'layers/@sparticuz-chromium'

@@ -1,27 +1,36 @@
-import { InputType, Field, ID } from "@nestjs/graphql";
+import { Field, ID, InputType } from '@nestjs/graphql';
+import { Transform, Type } from 'class-transformer';
 import {
-  IsInt,
   IsDate,
+  IsEnum,
+  IsInt,
   IsOptional,
   IsString,
-  IsEnum,
   MaxLength,
-  MinLength,
-} from "class-validator";
-import { Transform, Type } from "class-transformer";
-import { SessionStatus } from "../models/session-status.enum";
+  MinLength
+} from 'class-validator';
+
+const MAX_COMMENT_LENGTH = 500;
+const MAX_PLAYER_NAME_LENGTH = 100;
+
+import { SessionStatus } from '../models/session-status.enum';
 
 @InputType()
 export class CreateSessionInput {
   @Field(() => ID)
-  @Type(() => Number)
   @IsInt()
+  @Type(() => Number)
   arenaId!: number;
 
-  @Field()
-  @IsDate()
-  @Type(() => Date)
-  startTime!: Date;
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_COMMENT_LENGTH)
+  @MinLength(1, { message: 'comment must not be an empty string' })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || undefined : value
+  )
+  comment?: string;
 
   @Field()
   @IsDate()
@@ -31,25 +40,20 @@ export class CreateSessionInput {
   @Field({ nullable: true })
   @IsOptional()
   @IsString()
-  @MinLength(1, { message: "playerName must not be an empty string" })
-  @MaxLength(100)
+  @MaxLength(MAX_PLAYER_NAME_LENGTH)
+  @MinLength(1, { message: 'playerName must not be an empty string' })
   @Transform(({ value }: { value: unknown }) =>
-    typeof value === "string" ? value.trim() || undefined : value,
+    typeof value === 'string' ? value.trim() || undefined : value
   )
   playerName?: string;
 
-  @Field({ nullable: true })
-  @IsOptional()
-  @IsString()
-  @MinLength(1, { message: "comment must not be an empty string" })
-  @MaxLength(500)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === "string" ? value.trim() || undefined : value,
-  )
-  comment?: string;
+  @Field()
+  @IsDate()
+  @Type(() => Date)
+  startTime!: Date;
 
   @Field(() => SessionStatus, { nullable: true })
-  @IsOptional()
   @IsEnum(SessionStatus)
+  @IsOptional()
   status?: SessionStatus;
 }

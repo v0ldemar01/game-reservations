@@ -6,12 +6,12 @@ export {
   MAX_SUGGESTIONS,
   DEFAULT_PAGE,
   DEFAULT_PAGE_SIZE,
-  MAX_PAGE_SIZE,
-} from "./common/constants/constants.js";
+  MAX_PAGE_SIZE
+} from './common/constants/constants.js';
 export {
   type Arena,
   type SessionStatus,
   type Session,
   type SlotSuggestion,
-  type AvailabilityResult,
-} from "./common/types/types.js";
+  type AvailabilityResult
+} from './common/types/types.js';

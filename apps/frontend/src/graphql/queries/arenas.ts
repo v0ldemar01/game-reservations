@@ -1,4 +1,4 @@
-import { gql } from "@apollo/client";
+import { gql } from '@apollo/client';
 
 export const GET_ARENAS = gql`
   query GetArenas($search: String) {
@@ -9,7 +9,6 @@ export const GET_ARENAS = gql`
     }
   }
 `;
-
 export const GET_SESSIONS = gql`
   query GetSessions(
     $arenaId: ID!
@@ -43,7 +42,6 @@ export const GET_SESSIONS = gql`
     }
   }
 `;
-
 export const GET_ARENA_ANALYTICS = gql`
   query GetArenaAnalytics($arenaId: ID!, $from: String!, $to: String!) {
     arenaAnalytics(arenaId: $arenaId, from: $from, to: $to) {
@@ -59,7 +57,6 @@ export const GET_ARENA_ANALYTICS = gql`
     }
   }
 `;
-
 export const GET_BUSIEST_ARENAS = gql`
   query GetBusiestArenas($from: String!, $to: String!, $limit: Int) {
     busiestArenas(from: $from, to: $to, limit: $limit) {
@@ -70,7 +67,6 @@ export const GET_BUSIEST_ARENAS = gql`
     }
   }
 `;
-
 export const MY_WAITLIST_ENTRIES = gql`
   query MyWaitlistEntries {
     myWaitlistEntries {
@@ -83,7 +79,6 @@ export const MY_WAITLIST_ENTRIES = gql`
     }
   }
 `;
-
 export const CHECK_AVAILABILITY = gql`
   query CheckAvailability($input: CheckAvailabilityInput!) {
     checkAvailability(input: $input) {

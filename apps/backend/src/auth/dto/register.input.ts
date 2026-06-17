@@ -1,5 +1,7 @@
-import { InputType, Field } from "@nestjs/graphql";
-import { IsEmail, MinLength } from "class-validator";
+import { Field, InputType } from '@nestjs/graphql';
+import { IsEmail, MinLength } from 'class-validator';
+
+const MIN_PASSWORD_LENGTH = 8;
 
 @InputType()
 export class RegisterInput {
@@ -8,6 +10,8 @@ export class RegisterInput {
   email!: string;
 
   @Field()
-  @MinLength(8, { message: "Password must be at least 8 characters" })
+  @MinLength(MIN_PASSWORD_LENGTH, {
+    message: 'Password must be at least 8 characters'
+  })
   password!: string;
 }

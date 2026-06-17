@@ -1,16 +1,16 @@
-import { Module } from "@nestjs/common";
-import { SessionRepository } from "./session.repository";
-import { SESSION_REPOSITORY } from "./session.repository";
-import { SessionService } from "./session.service";
-import { SessionResolver } from "./session.resolver";
+import { Module } from '@nestjs/common';
+
+import { SESSION_REPOSITORY, SessionRepository } from './session.repository';
+import { SessionResolver } from './session.resolver';
+import { SessionService } from './session.service';
 
 @Module({
+  exports: [SessionService, SESSION_REPOSITORY],
   providers: [
     SessionRepository,
     { provide: SESSION_REPOSITORY, useExisting: SessionRepository },
     SessionService,
-    SessionResolver,
-  ],
-  exports: [SessionService, SESSION_REPOSITORY],
+    SessionResolver
+  ]
 })
 export class SessionModule {}

@@ -1,4 +1,4 @@
-import { gql } from "@apollo/client";
+import { gql } from '@apollo/client';
 
 const USER_FRAGMENT = gql`
   fragment UserFields on UserModel {
@@ -20,7 +20,6 @@ export const REGISTER = gql`
     }
   }
 `;
-
 export const LOGIN = gql`
   ${USER_FRAGMENT}
   mutation Login($input: LoginInput!) {

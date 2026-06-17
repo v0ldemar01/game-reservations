@@ -1,26 +1,24 @@
-import { ObjectType, Field, Int, Float, ID } from "@nestjs/graphql";
+import { Field, Float, ID, Int, ObjectType } from '@nestjs/graphql';
 
 @ObjectType()
 export class DayUtilization {
-  @Field()
-  date!: string; // YYYY-MM-DD
-
   @Field(() => Int)
   bookedMinutes!: number;
+
+  @Field()
+  date!: string; // YYYY-MM-DD
 
   @Field(() => Float)
   utilizationPercent!: number;
 }
-
 @ObjectType()
 export class HourlyCount {
   @Field(() => Int)
-  hour!: number;
+  count!: number;
 
   @Field(() => Int)
-  count!: number;
+  hour!: number;
 }
-
 @ObjectType()
 export class AnalyticsResult {
   @Field(() => [DayUtilization])
@@ -29,7 +27,6 @@ export class AnalyticsResult {
   @Field(() => [HourlyCount])
   peakHours!: HourlyCount[];
 }
-
 @ObjectType()
 export class ArenaUtilizationSummary {
   @Field(() => ID)
@@ -39,8 +36,8 @@ export class ArenaUtilizationSummary {
   arenaName!: string;
 
   @Field(() => Int)
-  totalBookedMinutes!: number;
+  sessionCount!: number;
 
   @Field(() => Int)
-  sessionCount!: number;
+  totalBookedMinutes!: number;
 }

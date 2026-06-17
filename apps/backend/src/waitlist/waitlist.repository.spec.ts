@@ -1,40 +1,41 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { Prisma } from "@prisma/client";
-import { WaitlistRepository } from "./waitlist.repository";
-import { DatabaseService } from "src/database/database.service";
+import { Test, type TestingModule } from '@nestjs/testing';
+import { type Prisma } from '@prisma/client';
+import { DatabaseService } from 'src/database/database.service';
+
+import { WaitlistRepository } from './waitlist.repository';
 
 function makeEntry(
   overrides: Partial<{
-    id: number;
     arenaId: number;
-    userId: number;
-    startTime: Date;
-    endTime: Date;
-    notifiedAt: Date | null;
     createdAt: Date;
-  }> = {},
+    endTime: Date;
+    id: number;
+    notifiedAt: Date | null;
+    startTime: Date;
+    userId: number;
+  }> = {}
 ) {
   return {
-    id: 1,
     arenaId: 1,
-    userId: 10,
-    startTime: new Date("2024-06-01T10:00:00Z"),
-    endTime: new Date("2024-06-01T11:00:00Z"),
-    notifiedAt: null,
     createdAt: new Date(),
-    ...overrides,
+    endTime: new Date('2024-06-01T11:00:00Z'),
+    id: 1,
+    notifiedAt: null,
+    startTime: new Date('2024-06-01T10:00:00Z'),
+    userId: 10,
+    ...overrides
   };
 }
 
-describe("WaitlistRepository", () => {
+describe('WaitlistRepository', () => {
   let repo: WaitlistRepository;
   let db: {
     waitlistEntry: {
       create: jest.Mock;
-      findUnique: jest.Mock;
-      findMany: jest.Mock;
       delete: jest.Mock;
       findFirst: jest.Mock;
+      findMany: jest.Mock;
+      findUnique: jest.Mock;
       update: jest.Mock;
     };
   };
@@ -48,28 +49,28 @@ describe("WaitlistRepository", () => {
         findFirst: jest.fn().mockResolvedValue(null),
         update: jest
           .fn()
-          .mockResolvedValue(makeEntry({ notifiedAt: new Date() })),
-      },
+          .mockResolvedValue(makeEntry({ notifiedAt: new Date() }))
+      }
     };
 
     db = {
       waitlistEntry: {
         create: jest.fn().mockResolvedValue(makeEntry()),
-        findUnique: jest.fn().mockResolvedValue(null),
-        findMany: jest.fn().mockResolvedValue([]),
         delete: jest.fn().mockResolvedValue(makeEntry()),
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue(null),
         update: jest
           .fn()
-          .mockResolvedValue(makeEntry({ notifiedAt: new Date() })),
-      },
+          .mockResolvedValue(makeEntry({ notifiedAt: new Date() }))
+      }
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WaitlistRepository,
-        { provide: DatabaseService, useValue: db },
-      ],
+        { provide: DatabaseService, useValue: db }
+      ]
     }).compile();
 
     repo = module.get(WaitlistRepository);
@@ -79,13 +80,13 @@ describe("WaitlistRepository", () => {
   // create
   // ---------------------------------------------------------------------------
 
-  describe("create", () => {
-    it("creates entry with provided fields", async () => {
+  describe('create', () => {
+    it('creates entry with provided fields', async () => {
       const data = {
         arenaId: 1,
-        userId: 10,
-        startTime: new Date("2024-06-01T10:00:00Z"),
-        endTime: new Date("2024-06-01T11:00:00Z"),
+        endTime: new Date('2024-06-01T11:00:00Z'),
+        startTime: new Date('2024-06-01T10:00:00Z'),
+        userId: 10
       };
       await repo.create(data);
       expect(db.waitlistEntry.create).toHaveBeenCalledWith({ data });
@@ -96,51 +97,51 @@ describe("WaitlistRepository", () => {
   // findFirstUnnotified
   // ---------------------------------------------------------------------------
 
-  describe("findFirstUnnotified", () => {
+  describe('findFirstUnnotified', () => {
     const arenaId = 1;
-    const startTime = new Date("2024-06-01T10:00:00Z");
-    const endTime = new Date("2024-06-01T11:00:00Z");
+    const startTime = new Date('2024-06-01T10:00:00Z');
+    const endTime = new Date('2024-06-01T11:00:00Z');
 
-    it("queries with notifiedAt: null and correct time filters", async () => {
+    it('queries with notifiedAt: null and correct time filters', async () => {
       await repo.findFirstUnnotified(arenaId, startTime, endTime);
 
       expect(db.waitlistEntry.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
+          orderBy: { createdAt: 'asc' },
           where: expect.objectContaining({
             arenaId,
-            notifiedAt: null,
-            startTime: { lte: startTime },
             endTime: { gte: endTime },
-          }),
-          orderBy: { createdAt: "asc" },
-        }),
+            notifiedAt: null,
+            startTime: { lte: startTime }
+          })
+        })
       );
     });
 
-    it("uses tx client when provided", async () => {
+    it('uses tx client when provided', async () => {
       await repo.findFirstUnnotified(
         arenaId,
         startTime,
         endTime,
-        mockTx as unknown as Prisma.TransactionClient,
+        mockTx as unknown as Prisma.TransactionClient
       );
 
       expect(mockTx.waitlistEntry.findFirst).toHaveBeenCalledTimes(1);
       expect(db.waitlistEntry.findFirst).not.toHaveBeenCalled();
     });
 
-    it("returns null when none found", async () => {
+    it('returns null when none found', async () => {
       db.waitlistEntry.findFirst.mockResolvedValue(null);
       await expect(
-        repo.findFirstUnnotified(arenaId, startTime, endTime),
+        repo.findFirstUnnotified(arenaId, startTime, endTime)
       ).resolves.toBeNull();
     });
 
-    it("returns the entry when found", async () => {
+    it('returns the entry when found', async () => {
       const entry = makeEntry({ id: 7 });
       db.waitlistEntry.findFirst.mockResolvedValue(entry);
       await expect(
-        repo.findFirstUnnotified(arenaId, startTime, endTime),
+        repo.findFirstUnnotified(arenaId, startTime, endTime)
       ).resolves.toEqual(entry);
     });
   });
@@ -149,20 +150,20 @@ describe("WaitlistRepository", () => {
   // markNotified
   // ---------------------------------------------------------------------------
 
-  describe("markNotified", () => {
-    it("updates notifiedAt to a Date", async () => {
+  describe('markNotified', () => {
+    it('updates notifiedAt to a Date', async () => {
       await repo.markNotified(42);
 
       expect(db.waitlistEntry.update).toHaveBeenCalledWith({
-        where: { id: 42 },
         data: { notifiedAt: expect.any(Date) },
+        where: { id: 42 }
       });
     });
 
-    it("uses tx client when provided", async () => {
+    it('uses tx client when provided', async () => {
       await repo.markNotified(
         42,
-        mockTx as unknown as Prisma.TransactionClient,
+        mockTx as unknown as Prisma.TransactionClient
       );
 
       expect(mockTx.waitlistEntry.update).toHaveBeenCalledTimes(1);
@@ -174,23 +175,23 @@ describe("WaitlistRepository", () => {
   // findOne / findByUserId / delete
   // ---------------------------------------------------------------------------
 
-  describe("findOne", () => {
-    it("returns null when not found", async () => {
+  describe('findOne', () => {
+    it('returns null when not found', async () => {
       await expect(repo.findOne(99)).resolves.toBeNull();
     });
 
-    it("delegates to findUnique", async () => {
+    it('delegates to findUnique', async () => {
       const entry = makeEntry();
       db.waitlistEntry.findUnique.mockResolvedValue(entry);
       await expect(repo.findOne(1)).resolves.toEqual(entry);
       expect(db.waitlistEntry.findUnique).toHaveBeenCalledWith({
-        where: { id: 1 },
+        where: { id: 1 }
       });
     });
   });
 
-  describe("findByUserId", () => {
-    it("returns entries ordered by createdAt asc", async () => {
+  describe('findByUserId', () => {
+    it('returns entries ordered by createdAt asc', async () => {
       const entries = [makeEntry()];
       db.waitlistEntry.findMany.mockResolvedValue(entries);
 
@@ -198,17 +199,17 @@ describe("WaitlistRepository", () => {
 
       expect(result).toEqual(entries);
       expect(db.waitlistEntry.findMany).toHaveBeenCalledWith({
-        where: { userId: 10 },
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: 'asc' },
+        where: { userId: 10 }
       });
     });
   });
 
-  describe("delete", () => {
-    it("deletes by id", async () => {
+  describe('delete', () => {
+    it('deletes by id', async () => {
       await repo.delete(5);
       expect(db.waitlistEntry.delete).toHaveBeenCalledWith({
-        where: { id: 5 },
+        where: { id: 5 }
       });
     });
   });

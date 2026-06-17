@@ -1,11 +1,12 @@
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { useMutation } from "@apollo/client";
-import { useAuth } from "../../contexts/auth-context.js";
-import { REGISTER, LOGIN } from "../../graphql/mutations/auth.js";
-import { AuthPayload } from "../../types.js";
-import { Button } from "../ui/button.js";
-import { ErrorMessage } from "../ui/error-message.js";
+import { useMutation } from '@apollo/client';
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+
+import { useAuth } from '../../contexts/auth-context.js';
+import { LOGIN, REGISTER } from '../../graphql/mutations/auth.js';
+import { type AuthPayload } from '../../types.js';
+import { Button } from '../ui/button.js';
+import { ErrorMessage } from '../ui/error-message.js';
 
 interface AuthFormValues {
   email: string;
@@ -14,14 +15,14 @@ interface AuthFormValues {
 
 export function AuthForm() {
   const { setAuth } = useAuth();
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [serverError, setServerError] = useState<null | string>(null);
 
   const {
-    register,
-    handleSubmit,
-    reset,
     formState: { errors },
+    handleSubmit,
+    register,
+    reset
   } = useForm<AuthFormValues>();
 
   const [login, { loading: loginLoading }] = useMutation<{
@@ -32,7 +33,7 @@ export function AuthForm() {
   }>(REGISTER);
   const loading = loginLoading || registerLoading;
 
-  const switchMode = (next: "login" | "register") => {
+  const switchMode = (next: 'login' | 'register') => {
     setMode(next);
     setServerError(null);
     reset();
@@ -40,20 +41,27 @@ export function AuthForm() {
 
   const onSubmit = async (values: AuthFormValues) => {
     setServerError(null);
+
     try {
-      if (mode === "login") {
+      if (mode === 'login') {
         const result = await login({ variables: { input: values } });
-        if (result.data) setAuth(result.data.login);
+
+        if (result.data) {
+          setAuth(result.data.login);
+        }
       } else {
         const result = await registerMutation({ variables: { input: values } });
-        if (result.data) setAuth(result.data.register);
+
+        if (result.data) {
+          setAuth(result.data.register);
+        }
       }
-    } catch (err: unknown) {
-      const gqlErr = (err as { graphQLErrors?: Array<{ message: string }> })
+    } catch (error: unknown) {
+      const gqlError = (error as { graphQLErrors?: Array<{ message: string }> })
         .graphQLErrors;
       setServerError(
-        gqlErr?.[0]?.message ??
-          "An unexpected error occurred. Please try again.",
+        gqlError?.[0]?.message ??
+          'An unexpected error occurred. Please try again.'
       );
     }
   };
@@ -66,32 +74,30 @@ export function AuthForm() {
             Game Arena Reservations
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            {mode === "login"
-              ? "Sign in to your account"
-              : "Create a new account"}
+            {mode === 'login'
+              ? 'Sign in to your account'
+              : 'Create a new account'}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+        <form className="flex flex-col gap-4" onSubmit={handleSubmit(onSubmit)}>
           <div className="flex flex-col gap-1.5">
             <label
-              htmlFor="email"
               className="text-sm font-medium text-gray-700"
+              htmlFor="email"
             >
               Email
             </label>
             <input
-              id="email"
-              type="email"
               autoComplete="email"
-              placeholder="you@example.com"
               className="rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              {...register("email", {
-                required: "Email is required",
-                pattern: {
-                  value: /\S+@\S+\.\S+/,
-                  message: "Invalid email address",
-                },
+              id="email"
+              placeholder="you@example.com"
+              type="email"
+              {...register('email', {
+                required: 'Email is required',
+                validate: (value) =>
+                  isValidEmail(value) || 'Invalid email address'
               })}
             />
             {errors.email && (
@@ -101,29 +107,29 @@ export function AuthForm() {
 
           <div className="flex flex-col gap-1.5">
             <label
-              htmlFor="password"
               className="text-sm font-medium text-gray-700"
+              htmlFor="password"
             >
               Password
             </label>
             <input
-              id="password"
-              type="password"
               autoComplete={
-                mode === "login" ? "current-password" : "new-password"
-              }
-              placeholder={
-                mode === "register" ? "At least 8 characters" : "••••••••"
+                mode === 'login' ? 'current-password' : 'new-password'
               }
               className="rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              {...register("password", {
-                required: "Password is required",
-                ...(mode === "register" && {
+              id="password"
+              placeholder={
+                mode === 'register' ? 'At least 8 characters' : '••••••••'
+              }
+              type="password"
+              {...register('password', {
+                required: 'Password is required',
+                ...(mode === 'register' && {
                   minLength: {
-                    value: 8,
-                    message: "Password must be at least 8 characters",
-                  },
-                }),
+                    message: 'Password must be at least 8 characters',
+                    value: 8
+                  }
+                })
               })}
             />
             {errors.password && (
@@ -134,33 +140,37 @@ export function AuthForm() {
           {serverError && <ErrorMessage message={serverError} />}
 
           <Button
-            type="submit"
-            loading={loading}
             className="w-full justify-center"
+            loading={loading}
+            type="submit"
           >
-            {mode === "login" ? "Sign In" : "Create Account"}
+            {mode === 'login' ? 'Sign In' : 'Create Account'}
           </Button>
         </form>
 
         <div className="mt-5 text-center text-sm text-gray-500">
-          {mode === "login" ? (
+          {mode === 'login' ? (
             <>
-              Don't have an account?{" "}
+              Don't have an account?{' '}
               <button
-                type="button"
-                onClick={() => switchMode("register")}
                 className="font-medium text-blue-600 hover:underline"
+                onClick={() => {
+                  switchMode('register');
+                }}
+                type="button"
               >
                 Sign up
               </button>
             </>
           ) : (
             <>
-              Already have an account?{" "}
+              Already have an account?{' '}
               <button
-                type="button"
-                onClick={() => switchMode("login")}
                 className="font-medium text-blue-600 hover:underline"
+                onClick={() => {
+                  switchMode('login');
+                }}
+                type="button"
               >
                 Sign in
               </button>
@@ -170,4 +180,17 @@ export function AuthForm() {
       </div>
     </div>
   );
+}
+
+export function isValidEmail(value: string): boolean {
+  const atIndex = value.indexOf('@');
+
+  if (atIndex <= 0 || atIndex === value.length - 1) {
+    return false;
+  }
+
+  const domain = value.slice(atIndex + 1);
+  const dotIndex = domain.lastIndexOf('.');
+
+  return dotIndex > 0 && dotIndex < domain.length - 1;
 }

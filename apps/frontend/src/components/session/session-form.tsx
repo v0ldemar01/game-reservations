@@ -1,130 +1,209 @@
-import { useEffect, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
-import { ApolloError, useLazyQuery, useMutation } from "@apollo/client";
-import {
-  Session,
-  SessionFormValues,
-  SlotSuggestion,
-  AvailabilityResult,
-} from "../../types.js";
+import { ApolloError, useLazyQuery, useMutation } from '@apollo/client';
+import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from '@game-reservations/shared';
+import { useEffect, useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+
+import { CREATE_RECURRING_SESSIONS } from '../../graphql/mutations/recurring.js';
 import {
   CREATE_SESSION,
-  UPDATE_SESSION,
-} from "../../graphql/mutations/sessions.js";
-import { CREATE_RECURRING_SESSIONS } from "../../graphql/mutations/recurring.js";
-import { JOIN_WAITLIST } from "../../graphql/mutations/waitlist.js";
+  UPDATE_SESSION
+} from '../../graphql/mutations/sessions.js';
+import { JOIN_WAITLIST } from '../../graphql/mutations/waitlist.js';
 import {
-  GET_SESSIONS,
   CHECK_AVAILABILITY,
-  MY_WAITLIST_ENTRIES,
-} from "../../graphql/queries/arenas.js";
-import { Button } from "../ui/button.js";
-import { ErrorMessage } from "../ui/error-message.js";
-import { Spinner } from "../ui/spinner.js";
-import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from "@game-reservations/shared";
-import { toDatetimeLocal, formatDateTime } from "../../utils/date.js";
-import { extractSuggestedSlotError } from "../../utils/graphql.js";
+  GET_SESSIONS,
+  MY_WAITLIST_ENTRIES
+} from '../../graphql/queries/arenas.js';
+import {
+  type AvailabilityResult,
+  type Session,
+  type SessionFormValues,
+  type SlotSuggestion
+} from '../../types.js';
+import { formatDateTime, toDatetimeLocal } from '../../utils/date.js';
+import { extractSuggestedSlotError } from '../../utils/graphql.js';
+import { Button } from '../ui/button.js';
+import { ErrorMessage } from '../ui/error-message.js';
+import { Spinner } from '../ui/spinner.js';
 
-interface Props {
+interface Properties {
   arenaId: string;
   date: string;
-  dayStart: string;
   dayEnd: string;
-  session: Session | null;
-  onSuccess: () => void;
+  dayStart: string;
   onCancel: () => void;
+  onSuccess: () => void;
+  session: null | Session;
 }
+
+interface RecurringSessionsResult {
+  createRecurringSessions: {
+    createdCount: number;
+    skippedCount: number;
+  };
+}
+
+const AVAIL_DEBOUNCE_MS = 500;
+const DAY_ABBREV_LENGTH = 3;
+const DEFAULT_DURATION_MINUTES = 60;
+const DEFAULT_WEEKS_AHEAD = 4;
+const MAX_DURATION_MINUTES = 1440;
+const MIN_DURATION_MINUTES = 5;
+const MINUTES_PER_HOUR = 60;
+const MS_PER_MIN = 60_000;
+const MIN_DURATION_MS = MIN_DURATION_MINUTES * MS_PER_MIN;
+const MAX_DURATION_MS = MAX_DURATION_MINUTES * MS_PER_MIN;
 
 const DAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday'
 ];
 
-function buildDefaultStartTime(date: string): string {
+export function buildDefaultEndTime(date: string): string {
+  return `${date}T13:00`;
+}
+
+export function buildDefaultStartTime(date: string): string {
   return `${date}T12:00`;
 }
-function buildDefaultEndTime(date: string): string {
-  return `${date}T13:00`;
+
+export function formatDurationMessage(minutes: number): string {
+  if (minutes < 0) {
+    return 'End time must be after start time';
+  }
+
+  if (minutes < MIN_DURATION_MINUTES) {
+    return 'Minimum duration is 5 minutes';
+  }
+
+  if (minutes > MAX_DURATION_MINUTES) {
+    return 'Maximum duration is 24 hours';
+  }
+
+  return `Duration: ${Math.floor(minutes / MINUTES_PER_HOUR)}h ${Math.round(minutes % MINUTES_PER_HOUR)}m`;
+}
+
+export function getSubmitError(error: unknown): {
+  message: string;
+  slots: SlotSuggestion[];
+} {
+  const parsed = extractSuggestedSlotError(error);
+
+  if (parsed) {
+    return { message: parsed.message, slots: parsed.suggestedSlots ?? [] };
+  }
+
+  if (error instanceof ApolloError && error.networkError) {
+    return {
+      message: 'Network error. Please check your connection and try again.',
+      slots: []
+    };
+  }
+
+  return {
+    message: 'An unexpected error occurred. Please try again.',
+    slots: []
+  };
+}
+
+export function getSubmitLabel(
+  isEdit: boolean,
+  isRecurring: boolean,
+  weeksAhead: number
+): string {
+  if (isEdit) {
+    return 'Save Changes';
+  }
+
+  if (isRecurring) {
+    return `Book ${weeksAhead} Sessions`;
+  }
+
+  return 'Book Session';
 }
 
 export function SessionForm({
   arenaId,
   date,
-  dayStart,
   dayEnd,
-  session,
-  onSuccess,
+  dayStart,
   onCancel,
-}: Props) {
+  onSuccess,
+  session
+}: Readonly<Properties>) {
   const isEdit = session !== null;
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<null | string>(null);
   const [suggestedSlots, setSuggestedSlots] = useState<SlotSuggestion[]>([]);
   const [isRecurring, setIsRecurring] = useState(false);
   const [dayOfWeek, setDayOfWeek] = useState(new Date().getDay());
-  const [weeksAhead, setWeeksAhead] = useState(4);
+  const [weeksAhead, setWeeksAhead] = useState(DEFAULT_WEEKS_AHEAD);
   const [joinedWaitlist, setJoinedWaitlist] = useState(false);
-  // duration-mode: when true the user specifies minutes instead of an end time
   const [durationMode, setDurationMode] = useState(false);
-  const [durationInput, setDurationInput] = useState(60);
-  const availTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const skipNextAvailCheckRef = useRef(false);
+  const [durationInput, setDurationInput] = useState(DEFAULT_DURATION_MINUTES);
+  const availTimerReference = useRef<null | ReturnType<typeof setTimeout>>(
+    null
+  );
+  const skipNextAvailCheckReference = useRef(false);
 
-  // Always refetch page 1 after a mutation so the user sees fresh results from the top
-  const refetchVars = {
+  const refetchVariables = {
     arenaId,
-    dayStart,
     dayEnd,
+    dayStart,
     page: DEFAULT_PAGE,
-    pageSize: DEFAULT_PAGE_SIZE,
+    pageSize: DEFAULT_PAGE_SIZE
   };
 
   const {
-    register,
-    handleSubmit,
-    setValue,
-    watch,
     formState: { errors, isSubmitting },
+    handleSubmit,
+    register,
+    setValue,
+    watch
   } = useForm<SessionFormValues>({
     defaultValues: {
-      startTime: isEdit
-        ? toDatetimeLocal(session.startTime)
-        : buildDefaultStartTime(date),
+      comment: session?.comment ?? '',
       endTime: isEdit
         ? toDatetimeLocal(session.endTime)
         : buildDefaultEndTime(date),
-      playerName: session?.playerName ?? "",
-      comment: session?.comment ?? "",
-      status: (session?.status as "ACTIVE" | "COMPLETED") ?? "ACTIVE",
-    },
+      playerName: session?.playerName ?? '',
+      startTime: isEdit
+        ? toDatetimeLocal(session.startTime)
+        : buildDefaultStartTime(date),
+      status: (session?.status ?? 'ACTIVE') as 'ACTIVE' | 'COMPLETED'
+    }
   });
 
-  const startTime = watch("startTime");
-  const endTime = watch("endTime");
+  const startTime = watch('startTime');
+  const endTime = watch('endTime');
 
   const durationMinutes =
     startTime && endTime
-      ? (new Date(endTime).getTime() - new Date(startTime).getTime()) / 60_000
+      ? (new Date(endTime).getTime() - new Date(startTime).getTime()) /
+        MS_PER_MIN
       : null;
 
   const [createSession] = useMutation(CREATE_SESSION, {
-    refetchQueries: [{ query: GET_SESSIONS, variables: refetchVars }],
+    refetchQueries: [{ query: GET_SESSIONS, variables: refetchVariables }]
   });
   const [updateSession] = useMutation(UPDATE_SESSION, {
-    refetchQueries: [{ query: GET_SESSIONS, variables: refetchVars }],
+    refetchQueries: [{ query: GET_SESSIONS, variables: refetchVariables }]
   });
-  const [createRecurring] = useMutation(CREATE_RECURRING_SESSIONS, {
-    refetchQueries: [{ query: GET_SESSIONS, variables: refetchVars }],
-  });
+  const [createRecurring] = useMutation<RecurringSessionsResult>(
+    CREATE_RECURRING_SESSIONS,
+    {
+      refetchQueries: [{ query: GET_SESSIONS, variables: refetchVariables }]
+    }
+  );
   const [joinWaitlist, { loading: waitlistLoading }] = useMutation(
     JOIN_WAITLIST,
     {
-      refetchQueries: [{ query: MY_WAITLIST_ENTRIES }],
-    },
+      refetchQueries: [{ query: MY_WAITLIST_ENTRIES }]
+    }
   );
 
   const [checkAvailability, { data: availData, loading: availLoading }] =
@@ -133,34 +212,44 @@ export function SessionForm({
     }>(CHECK_AVAILABILITY);
 
   useEffect(() => {
-    if (availTimerRef.current) clearTimeout(availTimerRef.current);
+    if (availTimerReference.current) {
+      clearTimeout(availTimerReference.current);
+    }
+
     setServerError(null);
     setSuggestedSlots([]);
     setJoinedWaitlist(false);
 
-    if (skipNextAvailCheckRef.current) {
-      skipNextAvailCheckRef.current = false;
+    const shouldSkip = skipNextAvailCheckReference.current;
+    skipNextAvailCheckReference.current = false;
+
+    if (shouldSkip || !startTime || !endTime) {
       return;
     }
 
-    if (!startTime || !endTime) return;
     const durationMs =
       new Date(endTime).getTime() - new Date(startTime).getTime();
-    if (durationMs < 5 * 60 * 1000 || durationMs > 24 * 60 * 60 * 1000) return;
 
-    availTimerRef.current = setTimeout(() => {
-      checkAvailability({
+    if (durationMs < MIN_DURATION_MS || durationMs > MAX_DURATION_MS) {
+      return;
+    }
+
+    availTimerReference.current = setTimeout(() => {
+      void checkAvailability({
         variables: {
           input: {
             arenaId,
-            startTime: new Date(startTime).toISOString(),
             endTime: new Date(endTime).toISOString(),
-          },
-        },
+            startTime: new Date(startTime).toISOString()
+          }
+        }
       });
-    }, 500);
+    }, AVAIL_DEBOUNCE_MS);
+
     return () => {
-      if (availTimerRef.current) clearTimeout(availTimerRef.current);
+      if (availTimerReference.current) {
+        clearTimeout(availTimerReference.current);
+      }
     };
   }, [startTime, endTime, arenaId, checkAvailability]);
 
@@ -174,14 +263,14 @@ export function SessionForm({
         await updateSession({
           variables: {
             input: {
-              id: session.id,
-              startTime: new Date(values.startTime).toISOString(),
-              endTime: new Date(values.endTime).toISOString(),
-              playerName: values.playerName || null,
               comment: values.comment || null,
-              status: values.status,
-            },
-          },
+              endTime: new Date(values.endTime).toISOString(),
+              id: session.id,
+              playerName: values.playerName || null,
+              startTime: new Date(values.startTime).toISOString(),
+              status: values.status
+            }
+          }
         });
       } else if (isRecurring) {
         const startDate = new Date(values.startTime);
@@ -190,23 +279,25 @@ export function SessionForm({
           variables: {
             input: {
               arenaId,
+              comment: values.comment || null,
               dayOfWeek,
-              startHour: startDate.getHours(),
-              startMin: startDate.getMinutes(),
               endHour: endDate.getHours(),
               endMin: endDate.getMinutes(),
-              weeksAhead,
               playerName: values.playerName || null,
-              comment: values.comment || null,
-            },
-          },
+              startHour: startDate.getHours(),
+              startMin: startDate.getMinutes(),
+              weeksAhead
+            }
+          }
         });
-        const { createdCount, skippedCount } =
+        const { createdCount = 0, skippedCount = 0 } =
           result.data?.createRecurringSessions ?? {};
+
         if (skippedCount > 0) {
           setServerError(
-            `Recurring series created: ${createdCount} sessions booked, ${skippedCount} skipped (arena full at those times).`,
+            `Recurring series created: ${createdCount} sessions booked, ${skippedCount} skipped (arena full at those times).`
           );
+
           return;
         }
       } else {
@@ -214,53 +305,49 @@ export function SessionForm({
           variables: {
             input: {
               arenaId,
-              startTime: new Date(values.startTime).toISOString(),
+              comment: values.comment || null,
               endTime: new Date(values.endTime).toISOString(),
               playerName: values.playerName || null,
-              comment: values.comment || null,
-            },
-          },
+              startTime: new Date(values.startTime).toISOString()
+            }
+          }
         });
       }
+
       onSuccess();
-    } catch (err) {
-      const parsed = extractSuggestedSlotError(err);
-      if (parsed) {
-        setServerError(parsed.message);
-        setSuggestedSlots(parsed.suggestedSlots ?? []);
-      } else if (err instanceof ApolloError && err.networkError) {
-        setServerError(
-          "Network error. Please check your connection and try again.",
-        );
-      } else {
-        setServerError("An unexpected error occurred. Please try again.");
-      }
+    } catch (error) {
+      const { message, slots } = getSubmitError(error);
+      setServerError(message);
+      setSuggestedSlots(slots);
     }
   };
 
   const handleJoinWaitlist = async () => {
-    if (!startTime || !endTime) return;
+    if (!startTime || !endTime) {
+      return;
+    }
+
     await joinWaitlist({
       variables: {
         input: {
           arenaId,
-          startTime: new Date(startTime).toISOString(),
           endTime: new Date(endTime).toISOString(),
-        },
-      },
+          startTime: new Date(startTime).toISOString()
+        }
+      }
     });
     setJoinedWaitlist(true);
   };
 
   const applySuggestion = (slot: SlotSuggestion) => {
     setDurationMode(false);
-    skipNextAvailCheckRef.current = true;
-    setValue("startTime", toDatetimeLocal(slot.startTime));
-    setValue("endTime", toDatetimeLocal(slot.endTime));
-    checkAvailability({
+    skipNextAvailCheckReference.current = true;
+    setValue('startTime', toDatetimeLocal(slot.startTime));
+    setValue('endTime', toDatetimeLocal(slot.endTime));
+    void checkAvailability({
       variables: {
-        input: { arenaId, startTime: slot.startTime, endTime: slot.endTime },
-      },
+        input: { arenaId, endTime: slot.endTime, startTime: slot.startTime }
+      }
     });
   };
 
@@ -271,44 +358,47 @@ export function SessionForm({
   useEffect(() => {
     if (durationMode && startTime) {
       const computed = new Date(
-        new Date(startTime).getTime() + durationInput * 60_000,
+        new Date(startTime).getTime() + durationInput * MS_PER_MIN
       );
-      if (!isNaN(computed.getTime())) {
-        setValue("endTime", toDatetimeLocal(computed.toISOString()));
+
+      if (!Number.isNaN(computed.getTime())) {
+        setValue('endTime', toDatetimeLocal(computed.toISOString()));
       }
     }
   }, [startTime, durationMode, durationInput]);
 
   const handleDurationInputChange = (minutes: number) => {
     setDurationInput(minutes);
+
     if (startTime) {
       const computed = new Date(
-        new Date(startTime).getTime() + minutes * 60_000,
+        new Date(startTime).getTime() + minutes * MS_PER_MIN
       );
-      if (!isNaN(computed.getTime())) {
-        setValue("endTime", toDatetimeLocal(computed.toISOString()));
+
+      if (!Number.isNaN(computed.getTime())) {
+        setValue('endTime', toDatetimeLocal(computed.toISOString()));
       }
     }
   };
 
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
       className="flex flex-col gap-5"
       noValidate
+      onSubmit={handleSubmit(onSubmit)}
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
           <label
-            htmlFor="startTime"
             className="text-sm font-medium text-gray-700"
+            htmlFor="startTime"
           >
             Start Time
           </label>
           <input
             id="startTime"
             type="datetime-local"
-            {...register("startTime", { required: "Start time is required" })}
+            {...register('startTime', { required: 'Start time is required' })}
             className="rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
           {errors.startTime && (
@@ -320,24 +410,28 @@ export function SessionForm({
 
         <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 self-start">
           <button
-            type="button"
-            onClick={() => setDurationMode(false)}
             className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-              !durationMode
-                ? "bg-white text-blue-700 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+              durationMode
+                ? 'text-gray-500 hover:text-gray-700'
+                : 'bg-white text-blue-700 shadow-sm'
             }`}
+            onClick={() => {
+              setDurationMode(false);
+            }}
+            type="button"
           >
             End time
           </button>
           <button
-            type="button"
-            onClick={() => setDurationMode(true)}
             className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
               durationMode
-                ? "bg-white text-blue-700 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
             }`}
+            onClick={() => {
+              setDurationMode(true);
+            }}
+            type="button"
           >
             Duration
           </button>
@@ -346,36 +440,36 @@ export function SessionForm({
         {durationMode ? (
           <div className="flex flex-col gap-1.5">
             <label
-              htmlFor="durationInput"
               className="text-sm font-medium text-gray-700"
+              htmlFor="durationInput"
             >
               Duration (minutes)
             </label>
             <input
-              id="durationInput"
-              type="number"
-              min={5}
-              max={1440}
-              value={durationInput}
-              onChange={(e) =>
-                handleDurationInputChange(Number(e.target.value))
-              }
               className="w-36 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              id="durationInput"
+              max={1440}
+              min={5}
+              onChange={(event_) => {
+                handleDurationInputChange(Number(event_.target.value));
+              }}
+              type="number"
+              value={durationInput}
             />
-            <input type="hidden" {...register("endTime", { required: true })} />
+            <input type="hidden" {...register('endTime', { required: true })} />
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
             <label
-              htmlFor="endTime"
               className="text-sm font-medium text-gray-700"
+              htmlFor="endTime"
             >
               End Time
             </label>
             <input
               id="endTime"
               type="datetime-local"
-              {...register("endTime", { required: "End time is required" })}
+              {...register('endTime', { required: 'End time is required' })}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             {errors.endTime && (
@@ -391,25 +485,19 @@ export function SessionForm({
         <div className="flex items-center gap-2">
           {durationMinutes !== null && (
             <p
-              className={`text-xs ${durationMinutes < 5 || durationMinutes > 1440 ? "text-red-500" : "text-gray-500"}`}
+              className={`text-xs ${durationMinutes < MIN_DURATION_MINUTES || durationMinutes > MAX_DURATION_MINUTES ? 'text-red-500' : 'text-gray-500'}`}
             >
-              {durationMinutes < 0
-                ? "End time must be after start time"
-                : durationMinutes < 5
-                  ? "Minimum duration is 5 minutes"
-                  : durationMinutes > 1440
-                    ? "Maximum duration is 24 hours"
-                    : `Duration: ${Math.floor(durationMinutes / 60)}h ${Math.round(durationMinutes % 60)}m`}
+              {formatDurationMessage(durationMinutes)}
             </p>
           )}
           {availLoading && <Spinner size="sm" />}
           {showAvailability && (
             <span
-              className={`text-xs font-medium ${availResult.available ? "text-green-600" : "text-red-500"}`}
+              className={`text-xs font-medium ${availResult.available ? 'text-green-600' : 'text-red-500'}`}
             >
               {availResult.available
-                ? "✓ Slot available"
-                : "✗ Slot unavailable"}
+                ? '✓ Slot available'
+                : '✗ Slot unavailable'}
             </span>
           )}
         </div>
@@ -423,15 +511,17 @@ export function SessionForm({
                   Available slots nearby:
                 </p>
                 <div className="flex flex-col gap-1.5">
-                  {availResult.suggestedSlots.map((slot, i) => (
+                  {availResult.suggestedSlots.map((slot, index) => (
                     <button
-                      key={i}
-                      type="button"
-                      onClick={() => applySuggestion(slot)}
                       className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-xs shadow-sm border border-amber-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left"
+                      key={index}
+                      onClick={() => {
+                        applySuggestion(slot);
+                      }}
+                      type="button"
                     >
                       <span className="font-medium text-gray-900">
-                        {formatDateTime(slot.startTime)} →{" "}
+                        {formatDateTime(slot.startTime)} →{' '}
                         {formatDateTime(slot.endTime)}
                       </span>
                       <span className="text-xs text-blue-600 font-medium">
@@ -453,44 +543,44 @@ export function SessionForm({
 
       <div className="flex flex-col gap-1.5">
         <label
-          htmlFor="playerName"
           className="text-sm font-medium text-gray-700"
+          htmlFor="playerName"
         >
-          Player Name{" "}
+          Player Name{' '}
           <span className="font-normal text-gray-400">(optional)</span>
         </label>
         <input
           id="playerName"
-          type="text"
           maxLength={100}
           placeholder="e.g. Alice"
-          {...register("playerName")}
+          type="text"
+          {...register('playerName')}
           className="rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="comment" className="text-sm font-medium text-gray-700">
+        <label className="text-sm font-medium text-gray-700" htmlFor="comment">
           Comment <span className="font-normal text-gray-400">(optional)</span>
         </label>
         <textarea
           id="comment"
-          rows={2}
           maxLength={500}
           placeholder="Any notes about this session..."
-          {...register("comment")}
+          rows={2}
+          {...register('comment')}
           className="rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
         />
       </div>
 
       {isEdit && (
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="status" className="text-sm font-medium text-gray-700">
+          <label className="text-sm font-medium text-gray-700" htmlFor="status">
             Status
           </label>
           <select
             id="status"
-            {...register("status")}
+            {...register('status')}
             className="rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             <option value="ACTIVE">Active</option>
@@ -503,10 +593,12 @@ export function SessionForm({
         <div className="flex flex-col gap-3 rounded-md border border-gray-200 p-3">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
-              type="checkbox"
               checked={isRecurring}
-              onChange={(e) => setIsRecurring(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300 text-blue-600"
+              onChange={(event_) => {
+                setIsRecurring(event_.target.checked);
+              }}
+              type="checkbox"
             />
             <span className="text-sm font-medium text-gray-700">
               Repeat weekly
@@ -520,18 +612,20 @@ export function SessionForm({
                   Day of week
                 </label>
                 <div className="flex flex-wrap gap-1">
-                  {DAY_NAMES.map((name, i) => (
+                  {DAY_NAMES.map((name, index) => (
                     <button
-                      key={i}
-                      type="button"
-                      onClick={() => setDayOfWeek(i)}
                       className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                        dayOfWeek === i
-                          ? "bg-blue-600 text-white"
-                          : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                        dayOfWeek === index
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
                       }`}
+                      key={index}
+                      onClick={() => {
+                        setDayOfWeek(index);
+                      }}
+                      type="button"
                     >
-                      {name.slice(0, 3)}
+                      {name.slice(0, DAY_ABBREV_LENGTH)}
                     </button>
                   ))}
                 </div>
@@ -541,12 +635,14 @@ export function SessionForm({
                   Weeks ahead
                 </label>
                 <input
-                  type="number"
-                  min={1}
-                  max={52}
-                  value={weeksAhead}
-                  onChange={(e) => setWeeksAhead(Number(e.target.value))}
                   className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  max={52}
+                  min={1}
+                  onChange={(event_) => {
+                    setWeeksAhead(Number(event_.target.value));
+                  }}
+                  type="number"
+                  value={weeksAhead}
                 />
                 <span className="text-xs text-gray-400">
                   ({weeksAhead} sessions will be created)
@@ -567,15 +663,17 @@ export function SessionForm({
                 Available slots nearby:
               </p>
               <div className="flex flex-col gap-2">
-                {suggestedSlots.map((slot, i) => (
+                {suggestedSlots.map((slot, index) => (
                   <button
-                    key={i}
-                    type="button"
-                    onClick={() => applySuggestion(slot)}
                     className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm shadow-sm border border-amber-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left"
+                    key={index}
+                    onClick={() => {
+                      applySuggestion(slot);
+                    }}
+                    type="button"
                   >
                     <span className="font-medium text-gray-900">
-                      {formatDateTime(slot.startTime)} →{" "}
+                      {formatDateTime(slot.startTime)} →{' '}
                       {formatDateTime(slot.endTime)}
                     </span>
                     <span className="text-xs text-blue-600 font-medium">
@@ -594,10 +692,12 @@ export function SessionForm({
                 when one opens up.
               </p>
               <Button
+                loading={waitlistLoading}
+                onClick={() => {
+                  void handleJoinWaitlist();
+                }}
                 type="button"
                 variant="secondary"
-                loading={waitlistLoading}
-                onClick={handleJoinWaitlist}
               >
                 Join Waitlist
               </Button>
@@ -613,15 +713,11 @@ export function SessionForm({
       )}
 
       <div className="flex justify-end gap-3 border-t pt-4">
-        <Button type="button" variant="secondary" onClick={onCancel}>
+        <Button onClick={onCancel} type="button" variant="secondary">
           Cancel
         </Button>
-        <Button type="submit" loading={isSubmitting}>
-          {isEdit
-            ? "Save Changes"
-            : isRecurring
-              ? `Book ${weeksAhead} Sessions`
-              : "Book Session"}
+        <Button loading={isSubmitting} type="submit">
+          {getSubmitLabel(isEdit, isRecurring, weeksAhead)}
         </Button>
       </div>
     </form>

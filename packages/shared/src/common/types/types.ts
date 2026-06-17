@@ -4,7 +4,7 @@ export interface Arena {
   createdAt: string;
 }
 
-export type SessionStatus = "ACTIVE" | "COMPLETED";
+export type SessionStatus = 'ACTIVE' | 'COMPLETED';
 
 export interface Session {
   id: string;

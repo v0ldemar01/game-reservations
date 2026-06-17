@@ -1,35 +1,50 @@
-import { Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
-import { PrismaService } from "src/prisma/prisma.service";
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 export interface TransactionOptions {
   isolationLevel?: Prisma.TransactionIsolationLevel;
   maxWait?: number;
   timeout?: number;
 }
-
 @Injectable()
 export class DatabaseService extends PrismaService {
-  async withTransaction<T>(
-    fn: (tx: Prisma.TransactionClient) => Promise<T>,
-    options: TransactionOptions = {},
-  ): Promise<T> {
-    return this.$transaction(fn, {
-      isolationLevel:
-        options.isolationLevel ??
-        Prisma.TransactionIsolationLevel.ReadCommitted,
-      maxWait: options.maxWait ?? 2_000,
-      timeout: options.timeout ?? 10_000,
-    });
+  private static readonly DEFAULT_MAX_WAIT_MS = 2000;
+
+  private static readonly DEFAULT_TIMEOUT_MS = 10_000;
+
+  private static readonly FNV_OFFSET_BASIS = 14_695_981_039_346_656_037n;
+
+  private static readonly FNV_PRIME = 1_099_511_628_211n;
+
+  private static readonly INT64_MAX = 9_223_372_036_854_775_807n; // 2^63 - 1
+
+  private static readonly UINT64_MASK = 18_446_744_073_709_551_615n; // 2^64 - 1
+
+  private static readonly UINT64_MODULUS = 18_446_744_073_709_551_616n; // 2^64
+
+  toLockKey(key: bigint | string): bigint {
+    if (typeof key === 'bigint') {
+      return this.toSignedInt64(key);
+    }
+
+    return this.toSignedInt64(this.fnv1a64(key));
   }
 
-  // Session-scoped — waits until acquired, must be released
-  async withAdvisoryLock<T>(
-    key: string | bigint,
-    fn: () => Promise<T>,
-  ): Promise<T> {
+  // Session-scoped — returns null immediately if not acquired (non-blocking)
+  async tryWithAdvisoryLock<T>(
+    key: bigint | string,
+    fn: () => Promise<T>
+  ): Promise<null | T> {
     const lockKey = this.toLockKey(key);
-    await this.$executeRaw`SELECT pg_advisory_lock(${lockKey})`;
+    const [row] = await this.$queryRaw<[{ pg_try_advisory_lock: boolean }]>`
+      SELECT pg_try_advisory_lock(${lockKey})
+    `;
+
+    if (!row.pg_try_advisory_lock) {
+      return null;
+    }
+
     try {
       return await fn();
     } finally {
@@ -37,16 +52,14 @@ export class DatabaseService extends PrismaService {
     }
   }
 
-  // Session-scoped — returns null immediately if not acquired (non-blocking)
-  async tryWithAdvisoryLock<T>(
-    key: string | bigint,
-    fn: () => Promise<T>,
-  ): Promise<T | null> {
+  // Session-scoped — waits until acquired, must be released
+  async withAdvisoryLock<T>(
+    key: bigint | string,
+    fn: () => Promise<T>
+  ): Promise<T> {
     const lockKey = this.toLockKey(key);
-    const [row] = await this.$queryRaw<[{ pg_try_advisory_lock: boolean }]>`
-      SELECT pg_try_advisory_lock(${lockKey})
-    `;
-    if (!row.pg_try_advisory_lock) return null;
+    await this.$executeRaw`SELECT pg_advisory_lock(${lockKey})`;
+
     try {
       return await fn();
     } finally {
@@ -57,32 +70,42 @@ export class DatabaseService extends PrismaService {
   // Transaction-scoped — released automatically on commit/rollback (no manual unlock)
   async withAdvisoryXactLock<T>(
     tx: Prisma.TransactionClient,
-    key: string | bigint,
-    fn: () => Promise<T>,
+    key: bigint | string,
+    fn: () => Promise<T>
   ): Promise<T> {
     const lockKey = this.toLockKey(key);
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
-    return fn();
+
+    return await fn();
   }
 
-  toLockKey(key: string | bigint): bigint {
-    if (typeof key === "bigint") return this.toSignedInt64(key);
-    return this.toSignedInt64(this.fnv1a64(key));
+  async withTransaction<T>(
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+    options: TransactionOptions = {}
+  ): Promise<T> {
+    return await this.$transaction(fn, {
+      isolationLevel:
+        options.isolationLevel ??
+        Prisma.TransactionIsolationLevel.ReadCommitted,
+      maxWait: options.maxWait ?? DatabaseService.DEFAULT_MAX_WAIT_MS,
+      timeout: options.timeout ?? DatabaseService.DEFAULT_TIMEOUT_MS
+    });
   }
 
   private fnv1a64(input: string): bigint {
-    const prime = 1099511628211n;
-    const mask = (1n << 64n) - 1n;
-    let hash = 14695981039346656037n;
-    for (let i = 0; i < input.length; i++) {
-      hash ^= BigInt(input.charCodeAt(i));
-      hash = (hash * prime) & mask;
+    let hash = DatabaseService.FNV_OFFSET_BASIS;
+
+    for (const char of input) {
+      hash ^= BigInt(char.codePointAt(0) ?? 0);
+      hash = (hash * DatabaseService.FNV_PRIME) & DatabaseService.UINT64_MASK;
     }
+
     return hash;
   }
 
   private toSignedInt64(unsigned: bigint): bigint {
-    const int64Max = (1n << 63n) - 1n;
-    return unsigned > int64Max ? unsigned - (1n << 64n) : unsigned;
+    return unsigned > DatabaseService.INT64_MAX
+      ? unsigned - DatabaseService.UINT64_MODULUS
+      : unsigned;
   }
 }

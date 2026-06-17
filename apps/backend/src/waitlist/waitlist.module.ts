@@ -1,15 +1,16 @@
-import { Module } from "@nestjs/common";
-import { WaitlistRepository, WAITLIST_REPOSITORY } from "./waitlist.repository";
-import { WaitlistService } from "./waitlist.service";
-import { WaitlistResolver } from "./waitlist.resolver";
+import { Module } from '@nestjs/common';
+
+import { WAITLIST_REPOSITORY, WaitlistRepository } from './waitlist.repository';
+import { WaitlistResolver } from './waitlist.resolver';
+import { WaitlistService } from './waitlist.service';
 
 @Module({
+  exports: [WaitlistService],
   providers: [
     WaitlistRepository,
     { provide: WAITLIST_REPOSITORY, useExisting: WaitlistRepository },
     WaitlistService,
-    WaitlistResolver,
-  ],
-  exports: [WaitlistService],
+    WaitlistResolver
+  ]
 })
 export class WaitlistModule {}

@@ -1,81 +1,127 @@
-import { Injectable } from "@nestjs/common";
-import { Prisma, Session } from "@prisma/client";
-import { DatabaseService } from "src/database/database.service";
-import { SessionStatus } from "./models/session-status.enum";
+import { Injectable } from '@nestjs/common';
+import { Prisma, Session } from '@prisma/client';
+import { DatabaseService } from 'src/database/database.service';
 
-export const SESSION_REPOSITORY = Symbol("SESSION_REPOSITORY");
+import { SessionStatus } from './models/session-status.enum';
 
+export const SESSION_REPOSITORY = Symbol('SESSION_REPOSITORY');
 export interface CreateSessionData {
   arenaId: number;
-  startTime: Date;
+  comment?: string;
   endTime: Date;
   playerName?: string;
-  comment?: string;
+  recurringGroupId?: number;
+  startTime: Date;
   status?: SessionStatus;
   userId?: number;
-  recurringGroupId?: number;
 }
-
-export interface UpdateSessionData {
-  startTime?: Date;
-  endTime?: Date;
-  playerName?: string;
-  comment?: string;
-  status?: SessionStatus;
-}
-
 export interface ISessionRepository {
-  findByArenaAndDateRange(
-    arenaId: number,
-    dayStart: Date,
-    dayEnd: Date,
-    page: number,
-    pageSize: number,
-  ): Promise<{
-    items: Session[];
-    total: number;
-    page: number;
-    pageSize: number;
-  }>;
-  findOne(id: number): Promise<Session | null>;
   countOverlapping(
     arenaId: number,
     startTime: Date,
     endTime: Date,
     excludeId?: number,
-    tx?: Prisma.TransactionClient,
+    tx?: Prisma.TransactionClient
   ): Promise<number>;
+  create(
+    data: CreateSessionData,
+    tx?: Prisma.TransactionClient
+  ): Promise<Session>;
+  delete(id: number): Promise<Session>;
+  findByArenaAndDateRange(
+    arenaId: number,
+    dayStart: Date,
+    dayEnd: Date,
+    page: number,
+    pageSize: number
+  ): Promise<{
+    items: Session[];
+    page: number;
+    pageSize: number;
+    total: number;
+  }>;
+  findEndTimesInRange(
+    arenaId: number,
+    from: Date,
+    searchEnd: Date,
+    excludeId?: number
+  ): Promise<{ endTime: Date }[]>;
+  findOne(id: number): Promise<null | Session>;
   lockOverlappingRows(
     tx: Prisma.TransactionClient,
     arenaId: number,
     startTime: Date,
     endTime: Date,
-    excludeId?: number,
+    excludeId?: number
   ): Promise<void>;
-  findEndTimesInRange(
-    arenaId: number,
-    from: Date,
-    searchEnd: Date,
-    excludeId?: number,
-  ): Promise<{ endTime: Date }[]>;
-  create(
-    data: CreateSessionData,
-    tx?: Prisma.TransactionClient,
-  ): Promise<Session>;
   update(
     id: number,
     data: UpdateSessionData,
-    tx?: Prisma.TransactionClient,
+    tx?: Prisma.TransactionClient
   ): Promise<Session>;
-  delete(id: number): Promise<Session>;
 }
-
+export interface UpdateSessionData {
+  comment?: string;
+  endTime?: Date;
+  playerName?: string;
+  startTime?: Date;
+  status?: SessionStatus;
+}
 @Injectable()
 export class SessionRepository implements ISessionRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  private client(tx?: Prisma.TransactionClient) {
-    return tx ?? this.db;
+  async countOverlapping(
+    arenaId: number,
+    startTime: Date,
+    endTime: Date,
+    excludeId?: number,
+    tx?: Prisma.TransactionClient
+  ): Promise<number> {
+    type CountRow = { count: bigint };
+
+    const client = this.client(tx);
+
+    let rows: CountRow[];
+
+    rows = await (excludeId === undefined
+      ? client.$queryRaw<CountRow[]>`
+        SELECT COUNT(*)::bigint AS count FROM sessions
+        WHERE arena_id   = ${arenaId}
+          AND start_time < ${endTime}
+          AND end_time   > ${startTime}
+      `
+      : client.$queryRaw<CountRow[]>`
+        SELECT COUNT(*)::bigint AS count FROM sessions
+        WHERE arena_id   = ${arenaId}
+          AND start_time < ${endTime}
+          AND end_time   > ${startTime}
+          AND id        != ${excludeId}
+      `);
+
+    return Number(rows[0].count);
+  }
+
+  create(
+    data: CreateSessionData,
+    tx?: Prisma.TransactionClient
+  ): Promise<Session> {
+    return this.client(tx).session.create({
+      data: {
+        arenaId: data.arenaId,
+        comment: data.comment,
+        endTime: data.endTime,
+        playerName: data.playerName,
+        recurringGroupId: data.recurringGroupId,
+        startTime: data.startTime,
+        status: data.status,
+        userId: data.userId
+      }
+    });
+  }
+
+  delete(id: number): Promise<Session> {
+    return this.db.session.delete({ where: { id } });
   }
 
   async findByArenaAndDateRange(
@@ -83,63 +129,51 @@ export class SessionRepository implements ISessionRepository {
     dayStart: Date,
     dayEnd: Date,
     page: number,
-    pageSize: number,
+    pageSize: number
   ): Promise<{
     items: Session[];
-    total: number;
     page: number;
     pageSize: number;
+    total: number;
   }> {
     const where: Prisma.SessionWhereInput = {
       arenaId,
-      startTime: { lt: dayEnd },
       endTime: { gt: dayStart },
+      startTime: { lt: dayEnd }
     };
     const [items, total] = await this.db.$transaction([
       this.db.session.findMany({
-        where,
-        orderBy: { startTime: "asc" },
+        orderBy: { startTime: 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
+        where
       }),
-      this.db.session.count({ where }),
+      this.db.session.count({ where })
     ]);
-    return { items, total, page, pageSize };
+
+    return { items, page, pageSize, total };
   }
 
-  findOne(id: number): Promise<Session | null> {
-    return this.db.session.findUnique({ where: { id } });
-  }
-
-  async countOverlapping(
+  findEndTimesInRange(
     arenaId: number,
-    startTime: Date,
-    endTime: Date,
-    excludeId?: number,
-    tx?: Prisma.TransactionClient,
-  ): Promise<number> {
-    type CountRow = { count: bigint };
-    const client = this.client(tx);
+    from: Date,
+    searchEnd: Date,
+    excludeId?: number
+  ): Promise<{ endTime: Date }[]> {
+    return this.db.session.findMany({
+      orderBy: { endTime: 'asc' },
+      select: { endTime: true },
+      where: {
+        arenaId,
+        endTime: { gt: from },
+        startTime: { lt: searchEnd },
+        ...(excludeId === undefined ? {} : { id: { not: excludeId } })
+      }
+    });
+  }
 
-    let rows: CountRow[];
-    if (excludeId !== undefined) {
-      rows = await client.$queryRaw<CountRow[]>`
-        SELECT COUNT(*)::bigint AS count FROM sessions
-        WHERE arena_id   = ${arenaId}
-          AND start_time < ${endTime}
-          AND end_time   > ${startTime}
-          AND id        != ${excludeId}
-      `;
-    } else {
-      rows = await client.$queryRaw<CountRow[]>`
-        SELECT COUNT(*)::bigint AS count FROM sessions
-        WHERE arena_id   = ${arenaId}
-          AND start_time < ${endTime}
-          AND end_time   > ${startTime}
-      `;
-    }
-
-    return Number(rows[0].count);
+  findOne(id: number): Promise<null | Session> {
+    return this.db.session.findUnique({ where: { id } });
   }
 
   async lockOverlappingRows(
@@ -147,82 +181,46 @@ export class SessionRepository implements ISessionRepository {
     arenaId: number,
     startTime: Date,
     endTime: Date,
-    excludeId?: number,
+    excludeId?: number
   ): Promise<void> {
-    if (excludeId !== undefined) {
-      await tx.$queryRaw`
+    await (excludeId === undefined
+      ? tx.$queryRaw`
+        SELECT id FROM sessions
+        WHERE arena_id   = ${arenaId}
+          AND start_time < ${endTime}
+          AND end_time   > ${startTime}
+        FOR UPDATE
+      `
+      : tx.$queryRaw`
         SELECT id FROM sessions
         WHERE arena_id   = ${arenaId}
           AND start_time < ${endTime}
           AND end_time   > ${startTime}
           AND id        != ${excludeId}
         FOR UPDATE
-      `;
-    } else {
-      await tx.$queryRaw`
-        SELECT id FROM sessions
-        WHERE arena_id   = ${arenaId}
-          AND start_time < ${endTime}
-          AND end_time   > ${startTime}
-        FOR UPDATE
-      `;
-    }
-  }
-
-  findEndTimesInRange(
-    arenaId: number,
-    from: Date,
-    searchEnd: Date,
-    excludeId?: number,
-  ): Promise<{ endTime: Date }[]> {
-    return this.db.session.findMany({
-      where: {
-        arenaId,
-        startTime: { lt: searchEnd },
-        endTime: { gt: from },
-        ...(excludeId !== undefined ? { id: { not: excludeId } } : {}),
-      },
-      select: { endTime: true },
-      orderBy: { endTime: "asc" },
-    });
-  }
-
-  create(
-    data: CreateSessionData,
-    tx?: Prisma.TransactionClient,
-  ): Promise<Session> {
-    return this.client(tx).session.create({
-      data: {
-        arenaId: data.arenaId,
-        startTime: data.startTime,
-        endTime: data.endTime,
-        playerName: data.playerName,
-        comment: data.comment,
-        status: data.status,
-        userId: data.userId,
-        recurringGroupId: data.recurringGroupId,
-      },
-    });
+      `);
   }
 
   update(
     id: number,
     data: UpdateSessionData,
-    tx?: Prisma.TransactionClient,
+    tx?: Prisma.TransactionClient
   ): Promise<Session> {
     return this.client(tx).session.update({
-      where: { id },
       data: {
-        startTime: data.startTime,
+        comment: data.comment,
         endTime: data.endTime,
         playerName: data.playerName,
-        comment: data.comment,
-        status: data.status,
+        startTime: data.startTime,
+        status: data.status
       },
+      where: { id }
     });
   }
 
-  delete(id: number): Promise<Session> {
-    return this.db.session.delete({ where: { id } });
+  private client(
+    tx?: Prisma.TransactionClient
+  ): DatabaseService | Prisma.TransactionClient {
+    return tx ?? this.db;
   }
 }

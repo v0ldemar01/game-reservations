@@ -1,25 +1,25 @@
-import { ObjectType, Field, ID } from "@nestjs/graphql";
+import { Field, ID, ObjectType } from '@nestjs/graphql';
 
 @ObjectType()
 export class WaitlistEntryModel {
   @Field(() => ID)
-  id!: number;
-
-  @Field(() => ID)
   arenaId!: number;
 
-  @Field(() => ID)
-  userId!: number;
-
   @Field()
-  startTime!: Date;
+  createdAt!: Date;
 
   @Field()
   endTime!: Date;
+
+  @Field(() => ID)
+  id!: number;
 
   @Field(() => Date, { nullable: true })
   notifiedAt?: Date | null;
 
   @Field()
-  createdAt!: Date;
+  startTime!: Date;
+
+  @Field(() => ID)
+  userId!: number;
 }

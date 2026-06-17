@@ -1,13 +1,14 @@
-import { useState } from "react";
-import { Arena } from "./types.js";
-import { ArenaList } from "./components/arena/arena-list.js";
-import { ArenaView } from "./components/arena/arena-view.js";
-import { AuthForm } from "./components/auth/auth-form.js";
-import { Button } from "./components/ui/button.js";
-import { useAuth } from "./contexts/auth-context.js";
+import { useState } from 'react';
+
+import { ArenaList } from './components/arena/arena-list.js';
+import { ArenaView } from './components/arena/arena-view.js';
+import { AuthForm } from './components/auth/auth-form.js';
+import { Button } from './components/ui/button.js';
+import { useAuth } from './contexts/auth-context.js';
+import { type Arena } from './types.js';
 
 export default function App() {
-  const { user, logout, isAdmin } = useAuth();
+  const { isAdmin, logout, user } = useAuth();
   const [selectedArena, setSelectedArena] = useState<Arena | null>(null);
 
   if (!user) {
@@ -36,7 +37,7 @@ export default function App() {
                 Admin
               </span>
             )}
-            <Button variant="secondary" onClick={logout}>
+            <Button onClick={logout} variant="secondary">
               Sign Out
             </Button>
           </div>
@@ -51,8 +52,8 @@ export default function App() {
                 Arenas
               </h2>
               <ArenaList
-                selectedId={selectedArena?.id ?? null}
                 onSelect={setSelectedArena}
+                selectedId={selectedArena?.id ?? null}
               />
             </div>
           </aside>
