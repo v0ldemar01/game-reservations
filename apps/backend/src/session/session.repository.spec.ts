@@ -120,7 +120,6 @@ describe('SessionRepository', () => {
     it('passes skip/take based on page and pageSize', async () => {
       db.$transaction.mockResolvedValue([[], 0]);
       db.session.findMany.mockReturnValue(Promise.resolve([]));
-      db.session.count.mockReturnValue(Promise.resolve(0));
 
       await repo.findByArenaAndDateRange(1, makeDate(0), makeDate(8), 3, 10);
 
@@ -153,8 +152,8 @@ describe('SessionRepository', () => {
   // ---------------------------------------------------------------------------
 
   describe('countOverlapping', () => {
-    it('queries without excludeId when not provided', async () => {
-      db.$queryRaw.mockResolvedValue([{ count: 3n }]);
+    it('returns peak count without excludeId', async () => {
+      db.$queryRaw.mockResolvedValue([{ peak: 3n }]);
 
       const result = await repo.countOverlapping(1, makeDate(0), makeDate(1));
 
@@ -162,8 +161,8 @@ describe('SessionRepository', () => {
       expect(db.$queryRaw).toHaveBeenCalledTimes(1);
     });
 
-    it('queries with excludeId when provided', async () => {
-      db.$queryRaw.mockResolvedValue([{ count: 2n }]);
+    it('returns peak count with excludeId', async () => {
+      db.$queryRaw.mockResolvedValue([{ peak: 2n }]);
 
       const result = await repo.countOverlapping(
         1,
@@ -177,7 +176,7 @@ describe('SessionRepository', () => {
     });
 
     it('uses transaction client when tx is provided', async () => {
-      mockTx.$queryRaw.mockResolvedValue([{ count: 1n }]);
+      mockTx.$queryRaw.mockResolvedValue([{ peak: 1n }]);
 
       const result = await repo.countOverlapping(
         1,
@@ -192,14 +191,11 @@ describe('SessionRepository', () => {
       expect(db.$queryRaw).not.toHaveBeenCalled();
     });
 
-    it('converts BigInt count to number', async () => {
-      db.$queryRaw.mockResolvedValue([{ count: 5n }]);
+    it('converts BigInt peak to number', async () => {
+      db.$queryRaw.mockResolvedValue([{ peak: 5n }]);
       await expect(
         repo.countOverlapping(1, makeDate(0), makeDate(1))
       ).resolves.toBe(5);
-      expect(
-        typeof (await repo.countOverlapping(1, makeDate(0), makeDate(1)))
-      ).toBe('number');
     });
   });
 
@@ -218,7 +214,7 @@ describe('SessionRepository', () => {
       expect(mockTx.$queryRaw).toHaveBeenCalledTimes(1);
     });
 
-    it('passes excludeId variant when provided', async () => {
+    it('still issues one query when excludeId is provided', async () => {
       await repo.lockOverlappingRows(
         mockTx as unknown as Prisma.TransactionClient,
         1,

@@ -224,15 +224,47 @@ The core challenge is preventing two concurrent requests from exceeding the 5-se
 For every `createSession` / `updateSession`:
 
 1. Open a `ReadCommitted` transaction
-2. Acquire `pg_advisory_xact_lock(arenaId)` — this serializes all writers for the same arena; only one proceeds at a time, the rest queue behind the lock
+2. Acquire `pg_advisory_xact_lock(arenaId)` — serializes all writers for the same arena; only one proceeds at a time, the rest queue behind the lock
 3. Lock overlapping rows with `SELECT id FROM sessions WHERE … FOR UPDATE` — prevents a row-level race if the advisory lock were ever bypassed
 4. `countOverlapping` — if `count >= 5`, throw `ConflictException`; otherwise insert
 
-Because the isolation level is `ReadCommitted`, `countOverlapping` re-reads the latest committed rows at the moment it runs (i.e. after the advisory lock is acquired), not a stale snapshot from transaction start. This is what makes the count correct even under concurrency.
+Because the isolation level is `ReadCommitted`, `countOverlapping` re-reads the latest committed rows at the moment it runs (after the advisory lock is acquired), not a stale snapshot from transaction start. This is what makes the count correct under concurrency.
 
-The advisory lock is **transaction-scoped** (`pg_advisory_xact_lock`) so it is automatically released on commit or rollback — no manual unlock, no risk of a leaked lock if the connection is returned to the pool.
+The advisory lock is **transaction-scoped** (`pg_advisory_xact_lock`) so it is automatically released on commit or rollback — no manual unlock, no risk of a leaked lock.
 
 This is a **TOCTOU-safe** pattern: the check and the write happen within the same serialized, locked context.
+
+#### Why both locks are necessary
+
+Each mechanism covers the gap the other has:
+
+| Scenario | Advisory lock | `FOR UPDATE` |
+| --- | --- | --- |
+| 0 existing sessions (phantom insert) | ✅ blocks | ❌ no rows to lock |
+| Existing rows modified concurrently | ✅ blocks | ✅ blocks |
+| Direct DB write bypassing the app | ❌ invisible | ✅ blocks |
+
+**The phantom insert problem** — `FOR UPDATE` alone is insufficient. It only locks rows that already exist. If two requests arrive when an arena has 0 sessions, `SELECT … FOR UPDATE` returns nothing — no rows, nothing to lock — and both proceed to insert:
+
+```
+T1: SELECT ... FOR UPDATE  ← returns 0 rows, acquires nothing
+T2: SELECT ... FOR UPDATE  ← returns 0 rows, acquires nothing
+T1: INSERT                 ← ok
+T2: INSERT                 ← ok, but now 2 concurrent sessions overlap
+```
+
+This is the **phantom read** problem. Solving it at the database level requires either `SERIALIZABLE` isolation or predicate locks — expensive for a write-heavy booking workload.
+
+**The advisory lock fills this gap** by locking on an arbitrary integer key (the `arenaId`), not on rows. It works even when there are no rows yet:
+
+```
+T1: pg_advisory_xact_lock(arenaId=1)  ← acquires
+T2: pg_advisory_xact_lock(arenaId=1)  ← blocks, regardless of row count
+T1: SELECT count=0, INSERT, COMMIT
+T2: unblocks, re-reads count=1        ← correct
+```
+
+**`FOR UPDATE` provides defense-in-depth** for existing rows — it prevents a concurrent transaction that somehow bypasses the advisory lock (a direct DB write, a migration script, a future code path) from modifying rows mid-transaction.
 
 ### Overlap Predicate
 

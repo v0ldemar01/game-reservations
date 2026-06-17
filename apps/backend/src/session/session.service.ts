@@ -19,6 +19,7 @@ import { DatabaseService } from 'src/database/database.service';
 import { CreateSessionInput } from './dto/create-session.input';
 import { UpdateSessionInput } from './dto/update-session.input';
 import { SlotSuggestion } from './models/availability.model';
+import { SessionStatus } from './models/session-status.enum';
 import { ISessionRepository, SESSION_REPOSITORY } from './session.repository';
 
 @Injectable()
@@ -170,6 +171,10 @@ export class SessionService {
 
   async updateSession(input: UpdateSessionInput): Promise<Session> {
     const existing = await this.findOne(input.id);
+
+    if (existing.status === SessionStatus.COMPLETED) {
+      throw new BadRequestException('Completed sessions cannot be edited.');
+    }
 
     const newStartTime = input.startTime ?? existing.startTime;
     const newEndTime = input.endTime ?? existing.endTime;

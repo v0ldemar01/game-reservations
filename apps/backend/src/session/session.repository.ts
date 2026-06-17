@@ -78,28 +78,36 @@ export class SessionRepository implements ISessionRepository {
     excludeId?: number,
     tx?: Prisma.TransactionClient
   ): Promise<number> {
-    type CountRow = { count: bigint };
+    // Count the PEAK concurrent sessions within [startTime, endTime), not the
+    // total overlapping sessions. The peak is found by checking at each
+    // critical point (existing session start times within the window) how many
+    // sessions are active simultaneously.
+    type PeakRow = { peak: bigint };
 
-    const client = this.client(tx);
-
-    let rows: CountRow[];
-
-    rows = await (excludeId === undefined
-      ? client.$queryRaw<CountRow[]>`
-        SELECT COUNT(*)::bigint AS count FROM sessions
+    const [row] = await this.client(tx).$queryRaw<PeakRow[]>`
+      WITH critical_times AS (
+        SELECT ${startTime}::timestamptz AS t
+        UNION ALL
+        SELECT start_time FROM sessions
         WHERE arena_id   = ${arenaId}
-          AND start_time < ${endTime}
-          AND end_time   > ${startTime}
-      `
-      : client.$queryRaw<CountRow[]>`
-        SELECT COUNT(*)::bigint AS count FROM sessions
-        WHERE arena_id   = ${arenaId}
-          AND start_time < ${endTime}
-          AND end_time   > ${startTime}
-          AND id        != ${excludeId}
-      `);
+          AND status     = ${SessionStatus.ACTIVE}::"SessionStatus"
+          AND start_time >  ${startTime}::timestamptz
+          AND start_time <  ${endTime}::timestamptz
+          AND (${excludeId ?? null}::int IS NULL OR id != ${excludeId ?? null}::int)
+      )
+      SELECT COALESCE(MAX(cnt), 0)::bigint AS peak FROM (
+        SELECT ct.t, COUNT(s.id) AS cnt
+        FROM critical_times ct
+        JOIN sessions s ON s.arena_id  = ${arenaId}
+          AND s.status     = ${SessionStatus.ACTIVE}::"SessionStatus"
+          AND s.start_time <= ct.t
+          AND s.end_time   >  ct.t
+          AND (${excludeId ?? null}::int IS NULL OR s.id != ${excludeId ?? null}::int)
+        GROUP BY ct.t
+      ) sub
+    `;
 
-    return Number(rows[0].count);
+    return Number(row.peak);
   }
 
   create(
@@ -183,22 +191,15 @@ export class SessionRepository implements ISessionRepository {
     endTime: Date,
     excludeId?: number
   ): Promise<void> {
-    await (excludeId === undefined
-      ? tx.$queryRaw`
-        SELECT id FROM sessions
-        WHERE arena_id   = ${arenaId}
-          AND start_time < ${endTime}
-          AND end_time   > ${startTime}
-        FOR UPDATE
-      `
-      : tx.$queryRaw`
-        SELECT id FROM sessions
-        WHERE arena_id   = ${arenaId}
-          AND start_time < ${endTime}
-          AND end_time   > ${startTime}
-          AND id        != ${excludeId}
-        FOR UPDATE
-      `);
+    await tx.$queryRaw`
+      SELECT id FROM sessions
+      WHERE arena_id   = ${arenaId}
+        AND status     = ${SessionStatus.ACTIVE}::"SessionStatus"
+        AND end_time   > ${startTime}
+        AND start_time < ${endTime}
+        AND (${excludeId ?? null}::int IS NULL OR id != ${excludeId ?? null}::int)
+      FOR UPDATE
+    `;
   }
 
   update(
