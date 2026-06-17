@@ -267,3 +267,137 @@ When a slot is unavailable, the service scans forward from all session `end_time
 - **LSP**: `Prisma.TransactionClient` type exactly mirrors the Prisma client interface for seamless use inside transactions.
 - **ISP**: Each DTO contains only the fields relevant to its operation (Create vs Update vs CheckAvailability are separate types). Repository interfaces (`ISessionRepository`, `IRecurringRepository`, `IWaitlistRepository`, `IAnalyticsRepository`) expose only the methods each service actually needs.
 - **DIP**: Services depend on injected repository interfaces (Symbol DI tokens), not concrete Prisma classes. Swapping the storage layer requires only a new class that satisfies the interface — no service changes.
+
+---
+
+## Developer Tooling
+
+The monorepo uses a unified linting and formatting pipeline enforced in CI and on every commit via lint-staged.
+
+### Tools
+
+| Tool                          | Purpose                                                         |
+| ----------------------------- | --------------------------------------------------------------- |
+| ESLint 9 (flat config)        | JS/TS static analysis — bugs, style, complexity, import order   |
+| Prettier 3                    | Opinionated code formatter                                      |
+| TypeScript (`tsc --noEmit`)   | Full type-checking pass without emitting files                  |
+| ls-lint                       | Enforces consistent file and directory naming conventions       |
+| EditorConfig                  | Baseline whitespace and encoding settings for all editors       |
+| lint-staged                   | Runs the appropriate checks on staged files before each commit  |
+
+### ESLint plugins active
+
+| Plugin                                 | What it catches                                                       |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| `@typescript-eslint`                   | TypeScript-specific rules (unsafe types, redundant casts, etc.)       |
+| `@stylistic/eslint-plugin`             | Formatting rules (padding lines, bracket spacing, etc.)               |
+| `eslint-plugin-unicorn`                | Modern JS best-practices (prefer `.at()`, no `isNaN`, naming, etc.)  |
+| `eslint-plugin-sonarjs`                | Cognitive complexity limit (≤ 18), code smells                        |
+| `eslint-plugin-perfectionist`          | Alphabetical ordering of imports, exports, interfaces, and objects    |
+| `eslint-plugin-import`                 | Import existence, no cycles, exports-last ordering                    |
+| `eslint-plugin-jsdoc`                  | JSDoc consistency (backend only)                                      |
+| `eslint-plugin-require-explicit-generics` | Forces explicit type parameters on generic calls                  |
+
+### Notable ESLint rules enforced
+
+- `TSEnumDeclaration` is **forbidden** — use `const` objects with a matching type alias instead:
+  ```ts
+  const Role = { ADMIN: 'ADMIN', PLAYER: 'PLAYER' } as const;
+  type Role = (typeof Role)[keyof typeof Role];
+  export { Role };
+  ```
+- `ExportNamedDeclaration[declaration!=null]` is **forbidden** — all exports must be bare `export { name }` at the end of the file.
+- `ImportAllDeclaration` / `ExportAllDeclaration` (`import/export *`) are **forbidden**.
+- `max-params` is capped at **3** — extract a params object for functions that need more.
+- `no-console` is **error** — use the NestJS `Logger` on the backend.
+- Cognitive complexity per function is capped at **18**.
+- All module-level members must be sorted alphabetically (imports, exports, interfaces, object keys).
+
+### Prettier settings
+
+```js
+// prettier.config.js
+{
+  arrowParens: 'always',
+  bracketSpacing: true,
+  printWidth: 80,
+  semi: true,
+  singleQuote: true,
+  tabWidth: 2,
+  trailingComma: 'none'
+}
+```
+
+### File naming rules (ls-lint)
+
+| Location            | Rule                              |
+| ------------------- | --------------------------------- |
+| Directories         | `kebab-case`                      |
+| All files           | `kebab-case`                      |
+| Prisma migrations   | `snake_case`                      |
+| `.github/` dirs     | `regex:[.]*[a-z]+`                |
+
+### Available lint commands
+
+Run from the **repo root**:
+
+```bash
+# Run all linters concurrently
+pnpm lint
+
+# Individual checks
+pnpm lint:js        # ESLint across all apps (type-aware)
+pnpm lint:types     # tsc --noEmit across all apps
+pnpm lint:format    # Prettier check (no writes)
+pnpm lint:files     # ls-lint file naming check
+pnpm lint:editor    # EditorConfig check
+
+# Auto-fix formatting
+pnpm format         # Prettier write across all source files
+```
+
+Run from an **individual app** (`apps/backend` or `apps/frontend`):
+
+```bash
+pnpm lint:js        # ESLint for this app only
+pnpm lint:types     # tsc --noEmit for this app only
+```
+
+### Pre-commit hook (lint-staged)
+
+lint-staged is configured at three levels that compose together.
+
+**Root** (`lint-staged.config.js`) — runs on every staged file regardless of type:
+
+```
+editorconfig-checker  →  ls-lint  →  prettier --check
+```
+
+**Backend** (`apps/backend/lint-staged.config.js`) — additionally on `*.ts`:
+
+```
+eslint src test prisma  →  tsc --noEmit
+```
+
+**Frontend** (`apps/frontend/lint-staged.config.js`) — additionally on `*.ts` / `*.tsx`:
+
+```
+eslint src  →  tsc --noEmit
+```
+
+To wire lint-staged into git hooks, install [Husky](https://typicode.com/husky) or [simple-git-hooks](https://github.com/toplevel-co/simple-git-hooks) and point the `pre-commit` hook at `pnpm exec lint-staged`. Example with simple-git-hooks:
+
+```bash
+pnpm add -Dw simple-git-hooks
+```
+
+```json
+// package.json
+"simple-git-hooks": {
+  "pre-commit": "pnpm exec lint-staged"
+}
+```
+
+```bash
+pnpm exec simple-git-hooks   # activates the hook
+```
