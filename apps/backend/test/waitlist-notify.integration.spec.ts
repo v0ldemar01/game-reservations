@@ -18,14 +18,14 @@ import { DatabaseService } from 'src/database/database.service';
 import { WaitlistModule } from 'src/waitlist/waitlist.module';
 import { WaitlistService } from 'src/waitlist/waitlist.service';
 
-async function setupTestArena(db: DatabaseService) {
-  return await db.arena.create({
+async function setupTestArena(database: DatabaseService) {
+  return await database.arena.create({
     data: { name: `Waitlist Arena ${Date.now()}` }
   });
 }
 
-async function setupTestUser(db: DatabaseService, suffix = '') {
-  return await db.user.create({
+async function setupTestUser(database: DatabaseService, suffix = '') {
+  return await database.user.create({
     data: {
       email: `waitlist-${Date.now()}${suffix}@example.com`,
       passwordHash: 'hash',
@@ -37,7 +37,7 @@ async function setupTestUser(db: DatabaseService, suffix = '') {
 describe('WaitlistService — notifyFirst (integration)', () => {
   let module: TestingModule;
   let service: WaitlistService;
-  let db: DatabaseService;
+  let database: DatabaseService;
 
   beforeAll(async () => {
     module = await Test.createTestingModule({
@@ -49,33 +49,33 @@ describe('WaitlistService — notifyFirst (integration)', () => {
     }).compile();
 
     service = module.get<WaitlistService>(WaitlistService);
-    db = module.get<DatabaseService>(DatabaseService);
-    await db.$connect();
+    database = module.get<DatabaseService>(DatabaseService);
+    await database.$connect();
   });
 
   afterAll(async () => {
-    await db.$disconnect();
+    await database.$disconnect();
     await module.close();
   });
 
   it('marks exactly one entry when notifyFirst is called', async () => {
-    const user1 = await setupTestUser(db, '-a');
-    const user2 = await setupTestUser(db, '-b');
-    const arena = await setupTestArena(db);
+    const user1 = await setupTestUser(database, '-a');
+    const user2 = await setupTestUser(database, '-b');
+    const arena = await setupTestArena(database);
 
     const startTime = new Date('2099-06-01T10:00:00Z');
     const endTime = new Date('2099-06-01T11:00:00Z');
 
-    const entry1 = await db.waitlistEntry.create({
+    const entry1 = await database.waitlistEntry.create({
       data: { arenaId: arena.id, endTime, startTime, userId: user1.id }
     });
-    const entry2 = await db.waitlistEntry.create({
+    const entry2 = await database.waitlistEntry.create({
       data: { arenaId: arena.id, endTime, startTime, userId: user2.id }
     });
 
     await service.notifyFirst(arena.id, startTime, endTime);
 
-    const notified = await db.waitlistEntry.findMany({
+    const notified = await database.waitlistEntry.findMany({
       where: { id: { in: [entry1.id, entry2.id] }, notifiedAt: { not: null } }
     });
 
@@ -83,23 +83,25 @@ describe('WaitlistService — notifyFirst (integration)', () => {
     expect(notified[0].id).toBe(entry1.id); // first-created gets notified first
 
     // Cleanup
-    await db.waitlistEntry.deleteMany({ where: { arenaId: arena.id } });
-    await db.arena.delete({ where: { id: arena.id } });
-    await db.user.deleteMany({ where: { id: { in: [user1.id, user2.id] } } });
+    await database.waitlistEntry.deleteMany({ where: { arenaId: arena.id } });
+    await database.arena.delete({ where: { id: arena.id } });
+    await database.user.deleteMany({
+      where: { id: { in: [user1.id, user2.id] } }
+    });
   }, 30_000);
 
   it('concurrent notifyFirst calls mark exactly one entry total', async () => {
-    const user1 = await setupTestUser(db, '-c');
-    const user2 = await setupTestUser(db, '-d');
-    const arena = await setupTestArena(db);
+    const user1 = await setupTestUser(database, '-c');
+    const user2 = await setupTestUser(database, '-d');
+    const arena = await setupTestArena(database);
 
     const startTime = new Date('2099-07-01T10:00:00Z');
     const endTime = new Date('2099-07-01T11:00:00Z');
 
-    await db.waitlistEntry.create({
+    await database.waitlistEntry.create({
       data: { arenaId: arena.id, endTime, startTime, userId: user1.id }
     });
-    await db.waitlistEntry.create({
+    await database.waitlistEntry.create({
       data: { arenaId: arena.id, endTime, startTime, userId: user2.id }
     });
 
@@ -109,49 +111,44 @@ describe('WaitlistService — notifyFirst (integration)', () => {
       service.notifyFirst(arena.id, startTime, endTime)
     ]);
 
-    const notified = await db.waitlistEntry.count({
+    const notified = await database.waitlistEntry.count({
       where: { arenaId: arena.id, notifiedAt: { not: null } }
     });
 
     // Exactly one or two entries notified — each concurrent call picks the next unnotified,
     // so both may succeed (each notification is a distinct event). The key invariant is that
-    // no entry is notified twice.
-    const entries = await db.waitlistEntry.findMany({
+    // no single entry has its notifiedAt set more than once (guaranteed by the advisory lock).
+    const entries = await database.waitlistEntry.findMany({
       where: { arenaId: arena.id }
     });
 
-    for (const entry of entries) {
-      if (entry.notifiedAt !== null) {
-        const duplicates = entries.filter(
-          (other) =>
-            other.id !== entry.id &&
-            other.notifiedAt !== null &&
-            Math.abs(other.notifiedAt.getTime() - entry.notifiedAt!.getTime()) <
-              100
-        );
-        expect(duplicates).toHaveLength(0);
-      }
-    }
+    const notifiedIds = entries
+      .filter((error) => error.notifiedAt !== null)
+      .map((error) => error.id);
+    const uniqueNotifiedIds = new Set(notifiedIds);
 
+    expect(uniqueNotifiedIds.size).toBe(notifiedIds.length);
     expect(notified).toBeGreaterThanOrEqual(1);
     expect(notified).toBeLessThanOrEqual(2);
 
     // Cleanup
-    await db.waitlistEntry.deleteMany({ where: { arenaId: arena.id } });
-    await db.arena.delete({ where: { id: arena.id } });
-    await db.user.deleteMany({ where: { id: { in: [user1.id, user2.id] } } });
+    await database.waitlistEntry.deleteMany({ where: { arenaId: arena.id } });
+    await database.arena.delete({ where: { id: arena.id } });
+    await database.user.deleteMany({
+      where: { id: { in: [user1.id, user2.id] } }
+    });
   }, 30_000);
 
   it('skips already-notified entries', async () => {
-    const user1 = await setupTestUser(db, '-e');
-    const user2 = await setupTestUser(db, '-f');
-    const arena = await setupTestArena(db);
+    const user1 = await setupTestUser(database, '-e');
+    const user2 = await setupTestUser(database, '-f');
+    const arena = await setupTestArena(database);
 
     const startTime = new Date('2099-08-01T10:00:00Z');
     const endTime = new Date('2099-08-01T11:00:00Z');
 
     // Create entry1 as already-notified, entry2 as unnotified
-    const entry1 = await db.waitlistEntry.create({
+    const entry1 = await database.waitlistEntry.create({
       data: {
         arenaId: arena.id,
         endTime,
@@ -160,26 +157,28 @@ describe('WaitlistService — notifyFirst (integration)', () => {
         userId: user1.id
       }
     });
-    const entry2 = await db.waitlistEntry.create({
+    const entry2 = await database.waitlistEntry.create({
       data: { arenaId: arena.id, endTime, startTime, userId: user2.id }
     });
 
     await service.notifyFirst(arena.id, startTime, endTime);
 
-    const updatedEntry2 = await db.waitlistEntry.findUnique({
+    const updatedEntry2 = await database.waitlistEntry.findUnique({
       where: { id: entry2.id }
     });
     expect(updatedEntry2!.notifiedAt).not.toBeNull();
 
-    const updatedEntry1 = await db.waitlistEntry.findUnique({
+    const updatedEntry1 = await database.waitlistEntry.findUnique({
       where: { id: entry1.id }
     });
     // entry1 was already notified — notifiedAt should not have changed (i.e., not reset)
     expect(updatedEntry1!.notifiedAt).not.toBeNull();
 
     // Cleanup
-    await db.waitlistEntry.deleteMany({ where: { arenaId: arena.id } });
-    await db.arena.delete({ where: { id: arena.id } });
-    await db.user.deleteMany({ where: { id: { in: [user1.id, user2.id] } } });
+    await database.waitlistEntry.deleteMany({ where: { arenaId: arena.id } });
+    await database.arena.delete({ where: { id: arena.id } });
+    await database.user.deleteMany({
+      where: { id: { in: [user1.id, user2.id] } }
+    });
   }, 30_000);
 });

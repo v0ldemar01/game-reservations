@@ -238,11 +238,11 @@ This is a **TOCTOU-safe** pattern: the check and the write happen within the sam
 
 Each mechanism covers the gap the other has:
 
-| Scenario | Advisory lock | `FOR UPDATE` |
-| --- | --- | --- |
-| 0 existing sessions (phantom insert) | ✅ blocks | ❌ no rows to lock |
-| Existing rows modified concurrently | ✅ blocks | ✅ blocks |
-| Direct DB write bypassing the app | ❌ invisible | ✅ blocks |
+| Scenario                             | Advisory lock | `FOR UPDATE`       |
+| ------------------------------------ | ------------- | ------------------ |
+| 0 existing sessions (phantom insert) | ✅ blocks     | ❌ no rows to lock |
+| Existing rows modified concurrently  | ✅ blocks     | ✅ blocks          |
+| Direct DB write bypassing the app    | ❌ invisible  | ✅ blocks          |
 
 **The phantom insert problem** — `FOR UPDATE` alone is insufficient. It only locks rows that already exist. If two requests arrive when an arena has 0 sessions, `SELECT … FOR UPDATE` returns nothing — no rows, nothing to lock — and both proceed to insert:
 

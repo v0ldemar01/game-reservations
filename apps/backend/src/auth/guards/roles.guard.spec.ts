@@ -61,10 +61,10 @@ describe('RolesGuard', () => {
     expect(guard.canActivate(ctx)).toBe(true);
   });
 
-  it('returns falsy when user is null', () => {
+  it('returns false when user is null', () => {
     reflector.getAllAndOverride.mockReturnValue([Role.ADMIN]);
     const ctx = makeExecutionContext(null);
-    expect(guard.canActivate(ctx)).toBeFalsy();
+    expect(guard.canActivate(ctx)).toBe(false);
   });
 
   it('calls reflector with ROLES_KEY and both handler + class', () => {

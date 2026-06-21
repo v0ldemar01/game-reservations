@@ -22,13 +22,16 @@ import { SessionService } from 'src/session/session.service';
 const CONCURRENT_REQUESTS = 10;
 const MAX_CONCURRENT = 5;
 
-async function cleanup(db: DatabaseService, arenaId: number): Promise<void> {
-  await db.session.deleteMany({ where: { arenaId } });
-  await db.arena.delete({ where: { id: arenaId } });
+async function cleanup(
+  database: DatabaseService,
+  arenaId: number
+): Promise<void> {
+  await database.session.deleteMany({ where: { arenaId } });
+  await database.arena.delete({ where: { id: arenaId } });
 }
 
-async function setupTestArena(db: DatabaseService): Promise<number> {
-  const arena = await db.arena.create({ data: { name: 'Test Arena' } });
+async function setupTestArena(database: DatabaseService): Promise<number> {
+  const arena = await database.arena.create({ data: { name: 'Test Arena' } });
 
   return arena.id;
 }
@@ -36,7 +39,7 @@ async function setupTestArena(db: DatabaseService): Promise<number> {
 describe('SessionService — concurrency (integration)', () => {
   let module: TestingModule;
   let service: SessionService;
-  let db: DatabaseService;
+  let database: DatabaseService;
 
   beforeAll(async () => {
     module = await Test.createTestingModule({
@@ -48,17 +51,17 @@ describe('SessionService — concurrency (integration)', () => {
     }).compile();
 
     service = module.get<SessionService>(SessionService);
-    db = module.get<DatabaseService>(DatabaseService);
-    await db.$connect();
+    database = module.get<DatabaseService>(DatabaseService);
+    await database.$connect();
   });
 
   afterAll(async () => {
-    await db.$disconnect();
+    await database.$disconnect();
     await module.close();
   });
 
   it(`allows exactly ${MAX_CONCURRENT} of ${CONCURRENT_REQUESTS} concurrent creates`, async () => {
-    const arenaId = await setupTestArena(db);
+    const arenaId = await setupTestArena(database);
 
     const startTime = new Date('2099-01-01T10:00:00Z');
     const endTime = new Date('2099-01-01T11:00:00Z');
@@ -82,14 +85,14 @@ describe('SessionService — concurrency (integration)', () => {
     expect(conflicted).toHaveLength(CONCURRENT_REQUESTS - MAX_CONCURRENT);
 
     // Verify DB state
-    const dbCount = await db.session.count({ where: { arenaId } });
-    expect(dbCount).toBe(MAX_CONCURRENT);
+    const databaseCount = await database.session.count({ where: { arenaId } });
+    expect(databaseCount).toBe(MAX_CONCURRENT);
 
-    await cleanup(db, arenaId);
+    await cleanup(database, arenaId);
   }, 30_000);
 
   it('allows boundary-touching sessions (5 end at T, 5 start at T)', async () => {
-    const arenaId = await setupTestArena(db);
+    const arenaId = await setupTestArena(database);
 
     const T = new Date('2099-02-01T12:00:00Z');
     const beforeT = new Date('2099-02-01T11:00:00Z');
@@ -115,6 +118,6 @@ describe('SessionService — concurrency (integration)', () => {
     expect(failed).toHaveLength(0);
     expect(succeeded).toHaveLength(5);
 
-    await cleanup(db, arenaId);
+    await cleanup(database, arenaId);
   }, 30_000);
 });

@@ -7,6 +7,7 @@ import {
   type ISessionRepository,
   SESSION_REPOSITORY
 } from 'src/session/session.repository';
+import { Role } from 'src/user/models/role.enum';
 
 import {
   type IRecurringRepository,
@@ -229,7 +230,7 @@ describe('RecurringService', () => {
     it('throws when non-owner non-admin tries to cancel', async () => {
       const group = makeGroup({ userId: 10 });
       recurringRepo.findGroupOrThrow.mockResolvedValue(group);
-      db.user.findUnique.mockResolvedValue({ id: 99, role: 'PLAYER' });
+      db.user.findUnique.mockResolvedValue({ id: 99, role: Role.PLAYER });
 
       await expect(service.cancelGroup(1, 99, false)).rejects.toThrow(
         'Forbidden'
@@ -239,7 +240,7 @@ describe('RecurringService', () => {
     it('allows ADMIN to cancel any group', async () => {
       const group = makeGroup({ userId: 10 });
       recurringRepo.findGroupOrThrow.mockResolvedValue(group);
-      db.user.findUnique.mockResolvedValue({ id: 99, role: 'ADMIN' });
+      db.user.findUnique.mockResolvedValue({ id: 99, role: Role.ADMIN });
       recurringRepo.deleteGroup.mockResolvedValue(group);
 
       const result = await service.cancelGroup(1, 99, false);

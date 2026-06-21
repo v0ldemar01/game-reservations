@@ -18,19 +18,19 @@ import { DatabaseService } from 'src/database/database.service';
 
 describe('DatabaseService — advisory locks (integration)', () => {
   let module: TestingModule;
-  let db: DatabaseService;
+  let database: DatabaseService;
 
   beforeAll(async () => {
     module = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule]
     }).compile();
 
-    db = module.get<DatabaseService>(DatabaseService);
-    await db.$connect();
+    database = module.get<DatabaseService>(DatabaseService);
+    await database.$connect();
   });
 
   afterAll(async () => {
-    await db.$disconnect();
+    await database.$disconnect();
     await module.close();
   });
 
@@ -41,31 +41,34 @@ describe('DatabaseService — advisory locks (integration)', () => {
   describe('withAdvisoryLock', () => {
     it('executes callback and releases lock', async () => {
       let ran = false;
-      await db.withAdvisoryLock('test:basic-lock', async () => {
+      await database.withAdvisoryLock('test:basic-lock', () => {
         ran = true;
+
+        return Promise.resolve();
       });
       expect(ran).toBe(true);
     });
 
     it('releases lock even when callback throws', async () => {
       await expect(
-        db.withAdvisoryLock('test:throw-lock', async () => {
-          throw new Error('intentional');
+        database.withAdvisoryLock('test:throw-lock', () => {
+          return Promise.reject(new Error('intentional'));
         })
       ).rejects.toThrow('intentional');
 
       // Lock must be released — re-acquiring should succeed immediately
       let reacquired = false;
-      await db.withAdvisoryLock('test:throw-lock', async () => {
+      await database.withAdvisoryLock('test:throw-lock', () => {
         reacquired = true;
+
+        return Promise.resolve();
       });
       expect(reacquired).toBe(true);
     });
 
     it('returns the value from the callback', async () => {
-      const result = await db.withAdvisoryLock(
-        'test:return-lock',
-        async () => 42
+      const result = await database.withAdvisoryLock('test:return-lock', () =>
+        Promise.resolve(42)
       );
       expect(result).toBe(42);
     });
@@ -78,10 +81,10 @@ describe('DatabaseService — advisory locks (integration)', () => {
   describe('tryWithAdvisoryLock', () => {
     it('acquires lock and runs callback when not already held', async () => {
       let ran = false;
-      const result = await db.tryWithAdvisoryLock('test:try-free', async () => {
+      const result = await database.tryWithAdvisoryLock('test:try-free', () => {
         ran = true;
 
-        return 'ok';
+        return Promise.resolve('ok');
       });
       expect(ran).toBe(true);
       expect(result).toBe('ok');
@@ -89,14 +92,16 @@ describe('DatabaseService — advisory locks (integration)', () => {
 
     it('releases lock after callback completes', async () => {
       const lockKey = 'test:try-release';
-      await db.tryWithAdvisoryLock(lockKey, async () => 'first');
+      await database.tryWithAdvisoryLock(lockKey, () =>
+        Promise.resolve('first')
+      );
 
       // Lock must be released — re-acquiring immediately should succeed
       let reacquired = false;
-      const result = await db.tryWithAdvisoryLock(lockKey, async () => {
+      const result = await database.tryWithAdvisoryLock(lockKey, () => {
         reacquired = true;
 
-        return 'second';
+        return Promise.resolve('second');
       });
       expect(reacquired).toBe(true);
       expect(result).toBe('second');
@@ -105,15 +110,14 @@ describe('DatabaseService — advisory locks (integration)', () => {
     it('releases lock even when callback throws', async () => {
       const lockKey = 'test:try-throw';
       await expect(
-        db.tryWithAdvisoryLock(lockKey, async () => {
-          throw new Error('oops');
+        database.tryWithAdvisoryLock(lockKey, () => {
+          return Promise.reject(new Error('oops'));
         })
       ).rejects.toThrow('oops');
 
       // Should be re-acquirable
-      const result = await db.tryWithAdvisoryLock(
-        lockKey,
-        async () => 're-acquired'
+      const result = await database.tryWithAdvisoryLock(lockKey, () =>
+        Promise.resolve('re-acquired')
       );
       expect(result).toBe('re-acquired');
     });
@@ -126,9 +130,11 @@ describe('DatabaseService — advisory locks (integration)', () => {
   describe('withAdvisoryXactLock', () => {
     it('acquires xact lock and auto-releases on transaction commit', async () => {
       let ran = false;
-      await db.withTransaction(async (tx) => {
-        await db.withAdvisoryXactLock(tx, 'test:xact-lock', async () => {
+      await database.withTransaction(async (tx) => {
+        await database.withAdvisoryXactLock(tx, 'test:xact-lock', () => {
           ran = true;
+
+          return Promise.resolve();
         });
       });
       expect(ran).toBe(true);
@@ -136,8 +142,8 @@ describe('DatabaseService — advisory locks (integration)', () => {
 
     it('auto-releases xact lock on transaction rollback', async () => {
       await expect(
-        db.withTransaction(async (tx) => {
-          await db.withAdvisoryXactLock(
+        database.withTransaction(async (tx) => {
+          await database.withAdvisoryXactLock(
             tx,
             'test:xact-rollback',
             async () => {}
@@ -149,9 +155,11 @@ describe('DatabaseService — advisory locks (integration)', () => {
 
       // Lock should be released after rollback — re-acquiring should work
       let reacquired = false;
-      await db.withTransaction(async (tx) => {
-        await db.withAdvisoryXactLock(tx, 'test:xact-rollback', async () => {
+      await database.withTransaction(async (tx) => {
+        await database.withAdvisoryXactLock(tx, 'test:xact-rollback', () => {
           reacquired = true;
+
+          return Promise.resolve();
         });
       });
       expect(reacquired).toBe(true);

@@ -11,7 +11,7 @@ const ignoresConfig = {
 const nestjsConfig: Linter.Config[] = [
   {
     // Limit project-aware parsing to app source — excludes eslint/lint-staged configs
-    files: ['src/**/*.ts', 'test/**/*.ts', 'prisma/**/*.ts'],
+    files: ['src/**/*.ts'],
     languageOptions: {
       parserOptions: {
         // Required for NestJS decorator metadata emission
@@ -77,6 +77,14 @@ const nestjsConfig: Linter.Config[] = [
           }
         }
       ]
+    }
+  },
+  {
+    files: ['test/**/*.ts', 'prisma/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        project: './tsconfig.eslint.json'
+      }
     }
   },
   {
