@@ -197,7 +197,7 @@ The integration suite covers four areas:
 Contains code that is identical on both sides of the API boundary:
 
 | Export                    | Description                                                       |
-| ------------------------- | ----------------------------------------------------------------- | ------------ |
+| ------------------------- | ----------------------------------------------------------------- |
 | `MAX_CONCURRENT_SESSIONS` | Max simultaneous sessions per arena (5)                           |
 | `MIN_DURATION_SECONDS`    | Minimum session duration in seconds (300)                         |
 | `MAX_DURATION_SECONDS`    | Maximum session duration in seconds (86400)                       |
@@ -205,7 +205,7 @@ Contains code that is identical on both sides of the API boundary:
 | `MAX_SUGGESTIONS`         | Maximum number of slot suggestions returned (3)                   |
 | `Arena`                   | GraphQL API contract interface                                    |
 | `Session`                 | GraphQL API contract interface (includes `status: SessionStatus`) |
-| `SessionStatus`           | `'ACTIVE'                                                         | 'COMPLETED'` |
+| `SessionStatus`           | `'ACTIVE'` &#124; `'COMPLETED'`                                   |
 | `SlotSuggestion`          | GraphQL API contract interface                                    |
 | `AvailabilityResult`      | GraphQL API contract interface                                    |
 
