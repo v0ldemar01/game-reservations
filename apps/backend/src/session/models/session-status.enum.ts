@@ -1,6 +1,6 @@
-import { registerEnumType } from "@nestjs/graphql";
-import { SessionStatus } from "@prisma/client";
+import { registerEnumType } from '@nestjs/graphql';
+import { SessionStatus } from '@prisma/client';
 
-export { SessionStatus };
+registerEnumType(SessionStatus, { name: 'SessionStatus' });
 
-registerEnumType(SessionStatus, { name: "SessionStatus" });
+export { SessionStatus } from '@prisma/client';

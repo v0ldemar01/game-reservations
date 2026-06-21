@@ -1,4 +1,4 @@
-import { gql } from "@apollo/client";
+import { gql } from '@apollo/client';
 
 export const JOIN_WAITLIST = gql`
   mutation JoinWaitlist($input: JoinWaitlistInput!) {
@@ -11,7 +11,6 @@ export const JOIN_WAITLIST = gql`
     }
   }
 `;
-
 export const LEAVE_WAITLIST = gql`
   mutation LeaveWaitlist($id: ID!) {
     leaveWaitlist(id: $id)

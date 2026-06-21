@@ -1,14 +1,13 @@
-import { ObjectType, Field } from "@nestjs/graphql";
+import { Field, ObjectType } from '@nestjs/graphql';
 
 @ObjectType()
 export class SlotSuggestion {
   @Field()
-  startTime!: Date;
+  endTime!: Date;
 
   @Field()
-  endTime!: Date;
+  startTime!: Date;
 }
-
 @ObjectType()
 export class AvailabilityResult {
   @Field()

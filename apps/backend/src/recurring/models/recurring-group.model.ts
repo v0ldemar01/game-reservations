@@ -1,24 +1,18 @@
-import { ObjectType, Field, ID, Int } from "@nestjs/graphql";
+import { Field, ID, Int, ObjectType } from '@nestjs/graphql';
 
 @ObjectType()
 export class RecurringGroupModel {
   @Field(() => ID)
-  id!: number;
-
-  @Field(() => ID)
   arenaId!: number;
 
-  @Field(() => ID)
-  userId!: number;
+  @Field(() => String, { nullable: true })
+  comment?: null | string;
+
+  @Field()
+  createdAt!: Date;
 
   @Field(() => Int)
   dayOfWeek!: number;
-
-  @Field(() => Int)
-  startHour!: number;
-
-  @Field(() => Int)
-  startMin!: number;
 
   @Field(() => Int)
   endHour!: number;
@@ -26,26 +20,31 @@ export class RecurringGroupModel {
   @Field(() => Int)
   endMin!: number;
 
+  @Field(() => ID)
+  id!: number;
+
+  @Field(() => String, { nullable: true })
+  playerName?: null | string;
+
+  @Field(() => Int)
+  startHour!: number;
+
+  @Field(() => Int)
+  startMin!: number;
+
+  @Field(() => ID)
+  userId!: number;
+
   @Field(() => Int)
   weeksAhead!: number;
-
-  @Field(() => String, { nullable: true })
-  playerName?: string | null;
-
-  @Field(() => String, { nullable: true })
-  comment?: string | null;
-
-  @Field()
-  createdAt!: Date;
 }
-
 @ObjectType()
 export class RecurringCreateResult {
-  @Field(() => RecurringGroupModel)
-  group!: RecurringGroupModel;
-
   @Field(() => Int)
   createdCount!: number;
+
+  @Field(() => RecurringGroupModel)
+  group!: RecurringGroupModel;
 
   @Field(() => Int)
   skippedCount!: number;

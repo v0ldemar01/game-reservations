@@ -1,46 +1,52 @@
-import { useEffect, useState } from "react";
-import { useQuery } from "@apollo/client";
-import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from "@game-reservations/shared";
-import { GET_SESSIONS } from "../../graphql/queries/arenas.js";
-import { Session } from "../../types.js";
-import { SessionCard } from "./session-card.js";
-import { Spinner } from "../ui/spinner.js";
-import { ErrorMessage } from "../ui/error-message.js";
+import { useQuery } from '@apollo/client';
+import { DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from '@game-reservations/shared';
+import { useEffect, useState } from 'react';
 
-interface SessionsPage {
-  items: Session[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
+import { GET_SESSIONS } from '../../graphql/queries/arenas.js';
+import { type Session } from '../../types.js';
+import { ErrorMessage } from '../ui/error-message.js';
+import { Spinner } from '../ui/spinner.js';
+import { SessionCard } from './session-card.js';
 
-interface Props {
+interface Properties {
   arenaId: string;
-  dayStart: string;
   dayEnd: string;
+  dayStart: string;
   onEdit: (session: Session) => void;
 }
 
-export function SessionList({ arenaId, dayStart, dayEnd, onEdit }: Props) {
+interface SessionsPage {
+  items: Session[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export function SessionList({
+  arenaId,
+  dayEnd,
+  dayStart,
+  onEdit
+}: Readonly<Properties>) {
   const [page, setPage] = useState(DEFAULT_PAGE);
 
   useEffect(() => {
     setPage(DEFAULT_PAGE);
   }, [dayStart, dayEnd]);
 
-  const { data, loading, error } = useQuery<{ sessions: SessionsPage }>(
+  const { data, error, loading } = useQuery<{ sessions: SessionsPage }>(
     GET_SESSIONS,
     {
+      fetchPolicy: 'cache-and-network',
+      skip: !arenaId,
       variables: {
         arenaId,
-        dayStart,
         dayEnd,
+        dayStart,
         page,
-        pageSize: DEFAULT_PAGE_SIZE,
-      },
-      fetchPolicy: "cache-and-network",
-      skip: !arenaId,
-    },
+        pageSize: DEFAULT_PAGE_SIZE
+      }
+    }
   );
 
   if (loading) {
@@ -70,59 +76,65 @@ export function SessionList({ arenaId, dayStart, dayEnd, onEdit }: Props) {
     );
   }
 
-  const refetchVars = {
+  const refetchVariables = {
     arenaId,
-    dayStart,
     dayEnd,
+    dayStart,
     page,
-    pageSize: DEFAULT_PAGE_SIZE,
+    pageSize: DEFAULT_PAGE_SIZE
   };
 
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-gray-500">
-        {total} session{total !== 1 ? "s" : ""} — up to 5 can run simultaneously
+        {total} session{total === 1 ? '' : 's'} — up to 5 can run simultaneously
       </p>
 
       {items.map((session) => (
         <SessionCard
           key={session.id}
-          session={session}
-          refetchVars={refetchVars}
           onEdit={onEdit}
+          refetchVars={refetchVariables}
+          session={session}
         />
       ))}
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between border-t pt-3">
           <button
-            onClick={() => setPage((p) => p - 1)}
-            disabled={page === 1}
             className="rounded-md border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={page === 1}
+            onClick={() => {
+              setPage((p) => p - 1);
+            }}
           >
             ← Prev
           </button>
 
           <div className="flex items-center gap-1">
-            {Array.from({ length: totalPages }, (_, i) => (
+            {Array.from({ length: totalPages }, (_, index) => (
               <button
-                key={i}
-                onClick={() => setPage(i + 1)}
                 className={`h-7 w-7 rounded-md text-xs font-medium transition-colors ${
-                  i + 1 === page
-                    ? "bg-blue-600 text-white"
-                    : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  index + 1 === page
+                    ? 'bg-blue-600 text-white'
+                    : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
                 }`}
+                key={index}
+                onClick={() => {
+                  setPage(index + 1);
+                }}
               >
-                {i + 1}
+                {index + 1}
               </button>
             ))}
           </div>
 
           <button
-            onClick={() => setPage((p) => p + 1)}
-            disabled={page === totalPages}
             className="rounded-md border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={page === totalPages}
+            onClick={() => {
+              setPage((p) => p + 1);
+            }}
           >
             Next →
           </button>

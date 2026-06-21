@@ -1,4 +1,4 @@
-import { gql } from "@apollo/client";
+import { gql } from '@apollo/client';
 
 export const CREATE_RECURRING_SESSIONS = gql`
   mutation CreateRecurringSessions($input: CreateRecurringInput!) {
@@ -17,7 +17,6 @@ export const CREATE_RECURRING_SESSIONS = gql`
     }
   }
 `;
-
 export const CANCEL_RECURRING_GROUP = gql`
   mutation CancelRecurringGroup($groupId: ID!, $futureOnly: Boolean) {
     cancelRecurringGroup(groupId: $groupId, futureOnly: $futureOnly)

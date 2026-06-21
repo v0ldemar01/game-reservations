@@ -1,75 +1,58 @@
 import {
-  Injectable,
+  MAX_CONCURRENT_SESSIONS,
+  MAX_DURATION_SECONDS,
+  MAX_SUGGESTIONS,
+  MIN_DURATION_SECONDS,
+  SUGGESTION_SEARCH_DAYS
+} from '@game-reservations/shared';
+import {
   BadRequestException,
-  NotFoundException,
   ConflictException,
   Inject,
-} from "@nestjs/common";
-import { Session } from "@prisma/client";
-import { DatabaseService } from "src/database/database.service";
-import { AdvisoryLocks } from "src/common/advisory-locks";
-import {
-  MAX_CONCURRENT_SESSIONS,
-  MIN_DURATION_SECONDS,
-  MAX_DURATION_SECONDS,
-  SUGGESTION_SEARCH_DAYS,
-  MAX_SUGGESTIONS,
-} from "@game-reservations/shared";
-import { CreateSessionInput } from "./dto/create-session.input";
-import { UpdateSessionInput } from "./dto/update-session.input";
-import { SlotSuggestion } from "./models/availability.model";
-import { ISessionRepository, SESSION_REPOSITORY } from "./session.repository";
+  Injectable,
+  NotFoundException
+} from '@nestjs/common';
+import { Session } from '@prisma/client';
+import { AdvisoryLocks } from 'src/common/advisory-locks';
+import { DatabaseService } from 'src/database/database.service';
 
-// Interval between periodic slot checkpoints used when no session end-times
-// exist in a time range (e.g. an arena with no bookings for several hours).
-const CHECKPOINT_INTERVAL_MS = 2 * 60 * 60 * 1000; // every 2 hours
+import { CreateSessionInput } from './dto/create-session.input';
+import { UpdateSessionInput } from './dto/update-session.input';
+import { SlotSuggestion } from './models/availability.model';
+import { SessionStatus } from './models/session-status.enum';
+import { ISessionRepository, SESSION_REPOSITORY } from './session.repository';
 
 @Injectable()
 export class SessionService {
+  // Interval between periodic slot checkpoints used when no session end-times
+  // exist in a time range (e.g. an arena with no bookings for several hours).
+  private static readonly CHECKPOINT_INTERVAL_MS = 7_200_000; // 2 hours in ms
+
+  private static readonly MS_PER_DAY = 86_400_000; // 24 hours in ms
+
+  private static readonly MS_PER_SECOND = 1000;
+
+  private static readonly SECONDS_PER_HOUR = 3600;
+
+  private static readonly SECONDS_PER_MINUTE = 60;
+
   constructor(
     @Inject(SESSION_REPOSITORY)
     private readonly sessionRepo: ISessionRepository,
-    private readonly db: DatabaseService,
+    private readonly db: DatabaseService
   ) {}
-
-  async findByArenaAndDateRange(
-    arenaId: number,
-    dayStart: Date,
-    dayEnd: Date,
-    page: number,
-    pageSize: number,
-  ): Promise<{
-    items: Session[];
-    total: number;
-    page: number;
-    pageSize: number;
-  }> {
-    return this.sessionRepo.findByArenaAndDateRange(
-      arenaId,
-      dayStart,
-      dayEnd,
-      page,
-      pageSize,
-    );
-  }
-
-  async findOne(id: number): Promise<Session> {
-    const session = await this.sessionRepo.findOne(id);
-    if (!session) throw new NotFoundException(`Session ${id} not found`);
-    return session;
-  }
 
   async checkAvailability(
     arenaId: number,
     startTime: Date,
     endTime: Date,
-    excludeSessionId?: number,
+    excludeSessionId?: number
   ): Promise<{ available: boolean; suggestedSlots?: SlotSuggestion[] }> {
     const peakCount = await this.sessionRepo.countOverlapping(
       arenaId,
       startTime,
       endTime,
-      excludeSessionId,
+      excludeSessionId
     );
 
     if (peakCount < MAX_CONCURRENT_SESSIONS) {
@@ -81,21 +64,22 @@ export class SessionService {
       arenaId,
       startTime,
       durationMs,
-      excludeSessionId,
+      excludeSessionId
     );
+
     return { available: false, suggestedSlots };
   }
 
   async createSession(
-    input: Omit<CreateSessionInput, "arenaId"> & {
+    input: Omit<CreateSessionInput, 'arenaId'> & {
       arenaId: number;
       userId?: number;
-    },
+    }
   ): Promise<Session> {
     this.validateDuration(input.startTime, input.endTime);
 
-    return this.db.withTransaction(async (tx) => {
-      return this.db.withAdvisoryXactLock(
+    return await this.db.withTransaction(async (tx) => {
+      return await this.db.withAdvisoryXactLock(
         tx,
         AdvisoryLocks.sessionWrite(input.arenaId),
         async () => {
@@ -103,7 +87,7 @@ export class SessionService {
             tx,
             input.arenaId,
             input.startTime,
-            input.endTime,
+            input.endTime
           );
 
           const peakCount = await this.sessionRepo.countOverlapping(
@@ -111,7 +95,7 @@ export class SessionService {
             input.startTime,
             input.endTime,
             undefined,
-            tx,
+            tx
           );
 
           if (peakCount >= MAX_CONCURRENT_SESSIONS) {
@@ -120,42 +104,85 @@ export class SessionService {
             const suggestedSlots = await this.findSuggestedSlots(
               input.arenaId,
               input.startTime,
-              durationMs,
+              durationMs
             );
+
             throw new ConflictException({
               message:
-                "Arena has reached the maximum of 5 concurrent sessions at this time.",
-              suggestedSlots,
+                'Arena has reached the maximum of 5 concurrent sessions at this time.',
+              suggestedSlots
             });
           }
 
-          return this.sessionRepo.create(
+          return await this.sessionRepo.create(
             {
               arenaId: input.arenaId,
-              startTime: input.startTime,
+              comment: input.comment,
               endTime: input.endTime,
               playerName: input.playerName,
-              comment: input.comment,
+              startTime: input.startTime,
               status: input.status,
-              userId: input.userId,
+              userId: input.userId
             },
-            tx,
+            tx
           );
-        },
+        }
       );
     });
   }
 
+  async deleteSession(id: number): Promise<boolean> {
+    await this.findOne(id);
+    await this.sessionRepo.delete(id);
+
+    return true;
+  }
+
+  async findByArenaAndDateRange(
+    arenaId: number,
+    dayStart: Date,
+    dayEnd: Date,
+    page: number,
+    pageSize: number
+  ): Promise<{
+    items: Session[];
+    page: number;
+    pageSize: number;
+    total: number;
+  }> {
+    return await this.sessionRepo.findByArenaAndDateRange(
+      arenaId,
+      dayStart,
+      dayEnd,
+      page,
+      pageSize
+    );
+  }
+
+  async findOne(id: number): Promise<Session> {
+    const session = await this.sessionRepo.findOne(id);
+
+    if (!session) {
+      throw new NotFoundException(`Session ${id} not found`);
+    }
+
+    return session;
+  }
+
   async updateSession(input: UpdateSessionInput): Promise<Session> {
     const existing = await this.findOne(input.id);
+
+    if (existing.status === SessionStatus.COMPLETED) {
+      throw new BadRequestException('Completed sessions cannot be edited.');
+    }
 
     const newStartTime = input.startTime ?? existing.startTime;
     const newEndTime = input.endTime ?? existing.endTime;
 
     this.validateDuration(newStartTime, newEndTime);
 
-    return this.db.withTransaction(async (tx) => {
-      return this.db.withAdvisoryXactLock(
+    return await this.db.withTransaction(async (tx) => {
+      return await this.db.withAdvisoryXactLock(
         tx,
         AdvisoryLocks.sessionWrite(existing.arenaId),
         async () => {
@@ -164,7 +191,7 @@ export class SessionService {
             existing.arenaId,
             newStartTime,
             newEndTime,
-            input.id,
+            input.id
           );
 
           const peakCount = await this.sessionRepo.countOverlapping(
@@ -172,7 +199,7 @@ export class SessionService {
             newStartTime,
             newEndTime,
             input.id,
-            tx,
+            tx
           );
 
           if (peakCount >= MAX_CONCURRENT_SESSIONS) {
@@ -181,74 +208,47 @@ export class SessionService {
               existing.arenaId,
               newStartTime,
               durationMs,
-              input.id,
+              input.id
             );
+
             throw new ConflictException({
               message:
-                "Arena has reached the maximum of 5 concurrent sessions at this time.",
-              suggestedSlots,
+                'Arena has reached the maximum of 5 concurrent sessions at this time.',
+              suggestedSlots
             });
           }
 
-          return this.sessionRepo.update(
+          return await this.sessionRepo.update(
             input.id,
             {
-              startTime: newStartTime,
+              comment:
+                input.comment === undefined
+                  ? (existing.comment ?? undefined)
+                  : input.comment,
               endTime: newEndTime,
               playerName:
-                input.playerName !== undefined
-                  ? input.playerName
-                  : (existing.playerName ?? undefined),
-              comment:
-                input.comment !== undefined
-                  ? input.comment
-                  : (existing.comment ?? undefined),
+                input.playerName === undefined
+                  ? (existing.playerName ?? undefined)
+                  : input.playerName,
+              startTime: newStartTime,
               status:
-                input.status !== undefined ? input.status : existing.status,
+                input.status === undefined ? existing.status : input.status
             },
-            tx,
+            tx
           );
-        },
+        }
       );
     });
-  }
-
-  async deleteSession(id: number): Promise<boolean> {
-    await this.findOne(id);
-    await this.sessionRepo.delete(id);
-    return true;
-  }
-
-  private validateDuration(startTime: Date, endTime: Date): void {
-    const durationSeconds = (endTime.getTime() - startTime.getTime()) / 1000;
-
-    if (startTime >= endTime) {
-      throw new BadRequestException(
-        "Start time must be strictly before end time.",
-      );
-    }
-
-    if (durationSeconds < MIN_DURATION_SECONDS) {
-      throw new BadRequestException(
-        `Session duration must be at least ${MIN_DURATION_SECONDS / 60} minutes.`,
-      );
-    }
-
-    if (durationSeconds > MAX_DURATION_SECONDS) {
-      throw new BadRequestException(
-        `Session duration must not exceed ${MAX_DURATION_SECONDS / 3600} hours.`,
-      );
-    }
   }
 
   private async findSuggestedSlots(
     arenaId: number,
     from: Date,
     durationMs: number,
-    excludeSessionId?: number,
+    excludeSessionId?: number
   ): Promise<SlotSuggestion[]> {
     const searchEnd = new Date(
-      from.getTime() + SUGGESTION_SEARCH_DAYS * 24 * 60 * 60 * 1000,
+      from.getTime() + SUGGESTION_SEARCH_DAYS * SessionService.MS_PER_DAY
     );
     const suggestions: SlotSuggestion[] = [];
 
@@ -256,14 +256,15 @@ export class SessionService {
       arenaId,
       from,
       searchEnd,
-      excludeSessionId,
+      excludeSessionId
     );
 
     const checkpoints: Date[] = [];
+
     for (
       let t = from.getTime();
       t < searchEnd.getTime();
-      t += CHECKPOINT_INTERVAL_MS
+      t += SessionService.CHECKPOINT_INTERVAL_MS
     ) {
       checkpoints.push(new Date(t));
     }
@@ -271,37 +272,73 @@ export class SessionService {
     const allCandidates = [
       from,
       ...sessionCandidates.map((s) => s.endTime),
-      ...checkpoints,
+      ...checkpoints
     ];
     allCandidates.sort((a, b) => a.getTime() - b.getTime());
 
     const seen = new Set<number>();
     const candidateTimes = allCandidates.filter((d) => {
-      const bucket = Math.floor(d.getTime() / 1000);
-      if (seen.has(bucket)) return false;
+      const bucket = Math.floor(d.getTime() / SessionService.MS_PER_SECOND);
+
+      if (seen.has(bucket)) {
+        return false;
+      }
+
       seen.add(bucket);
+
       return true;
     });
 
     for (const candidateStart of candidateTimes) {
-      if (suggestions.length >= MAX_SUGGESTIONS) break;
-      if (candidateStart >= searchEnd) break;
+      if (suggestions.length >= MAX_SUGGESTIONS) {
+        break;
+      }
+
+      if (candidateStart >= searchEnd) {
+        break;
+      }
 
       const candidateEnd = new Date(candidateStart.getTime() + durationMs);
-      if (candidateEnd > searchEnd) break;
+
+      if (candidateEnd > searchEnd) {
+        break;
+      }
 
       const count = await this.sessionRepo.countOverlapping(
         arenaId,
         candidateStart,
         candidateEnd,
-        excludeSessionId,
+        excludeSessionId
       );
 
       if (count < MAX_CONCURRENT_SESSIONS) {
-        suggestions.push({ startTime: candidateStart, endTime: candidateEnd });
+        suggestions.push({ endTime: candidateEnd, startTime: candidateStart });
       }
     }
 
     return suggestions;
+  }
+
+  private validateDuration(startTime: Date, endTime: Date): void {
+    const durationSeconds =
+      (endTime.getTime() - startTime.getTime()) / SessionService.MS_PER_SECOND;
+
+    if (startTime >= endTime) {
+      throw new BadRequestException(
+        'Start time must be strictly before end time.'
+      );
+    }
+
+    if (durationSeconds < MIN_DURATION_SECONDS) {
+      throw new BadRequestException(
+        `Session duration must be at least ${MIN_DURATION_SECONDS / SessionService.SECONDS_PER_MINUTE} minutes.`
+      );
+    }
+
+    if (durationSeconds > MAX_DURATION_SECONDS) {
+      throw new BadRequestException(
+        `Session duration must not exceed ${MAX_DURATION_SECONDS / SessionService.SECONDS_PER_HOUR} hours.`
+      );
+    }
   }
 }

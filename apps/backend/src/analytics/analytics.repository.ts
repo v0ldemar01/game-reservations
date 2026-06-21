@@ -1,58 +1,42 @@
-import { Injectable } from "@nestjs/common";
-import { Session } from "@prisma/client";
-import { DatabaseService } from "src/database/database.service";
+import { Injectable } from '@nestjs/common';
+import { Session } from '@prisma/client';
+import { DatabaseService } from 'src/database/database.service';
 
-export const ANALYTICS_REPOSITORY = Symbol("ANALYTICS_REPOSITORY");
-
+export const ANALYTICS_REPOSITORY = Symbol('ANALYTICS_REPOSITORY');
 export interface BusiestArenaRow {
   arenaId: number;
   arenaName: string;
-  totalBookedMinutes: number;
   sessionCount: number;
+  totalBookedMinutes: number;
 }
-
 export interface IAnalyticsRepository {
-  findSessionsInRange(
-    arenaId: number,
-    from: Date,
-    to: Date,
-  ): Promise<Session[]>;
   busiestArenas(
     from: Date,
     to: Date,
-    limit: number,
+    limit: number
   ): Promise<BusiestArenaRow[]>;
+  findSessionsInRange(
+    arenaId: number,
+    from: Date,
+    to: Date
+  ): Promise<Session[]>;
 }
-
 @Injectable()
 export class AnalyticsRepository implements IAnalyticsRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  findSessionsInRange(
-    arenaId: number,
-    from: Date,
-    to: Date,
-  ): Promise<Session[]> {
-    return this.db.session.findMany({
-      where: {
-        arenaId,
-        startTime: { lt: to },
-        endTime: { gt: from },
-      },
-    });
-  }
-
   async busiestArenas(
     from: Date,
     to: Date,
-    limit: number,
+    limit: number
   ): Promise<BusiestArenaRow[]> {
     type Row = {
       arena_id: bigint;
       arena_name: string;
-      total_minutes: bigint;
       session_count: bigint;
+      total_minutes: bigint;
     };
+
     const rows = await this.db.$queryRaw<Row[]>`
       SELECT
         a.id            AS arena_id,
@@ -67,11 +51,26 @@ export class AnalyticsRepository implements IAnalyticsRepository {
       ORDER BY total_minutes DESC NULLS LAST
       LIMIT ${limit}
     `;
+
     return rows.map((r) => ({
       arenaId: Number(r.arena_id),
       arenaName: r.arena_name,
-      totalBookedMinutes: Number(r.total_minutes ?? 0),
-      sessionCount: Number(r.session_count ?? 0),
+      sessionCount: Number(r.session_count),
+      totalBookedMinutes: Number(r.total_minutes)
     }));
+  }
+
+  findSessionsInRange(
+    arenaId: number,
+    from: Date,
+    to: Date
+  ): Promise<Session[]> {
+    return this.db.session.findMany({
+      where: {
+        arenaId,
+        endTime: { gt: from },
+        startTime: { lt: to }
+      }
+    });
   }
 }

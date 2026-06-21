@@ -1,17 +1,18 @@
-import { Module } from "@nestjs/common";
+import { Module } from '@nestjs/common';
+
 import {
-  AnalyticsRepository,
   ANALYTICS_REPOSITORY,
-} from "./analytics.repository";
-import { AnalyticsService } from "./analytics.service";
-import { AnalyticsResolver } from "./analytics.resolver";
+  AnalyticsRepository
+} from './analytics.repository';
+import { AnalyticsResolver } from './analytics.resolver';
+import { AnalyticsService } from './analytics.service';
 
 @Module({
   providers: [
     AnalyticsRepository,
     { provide: ANALYTICS_REPOSITORY, useExisting: AnalyticsRepository },
     AnalyticsService,
-    AnalyticsResolver,
-  ],
+    AnalyticsResolver
+  ]
 })
 export class AnalyticsModule {}

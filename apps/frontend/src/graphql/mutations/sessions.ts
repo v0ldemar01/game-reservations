@@ -1,4 +1,4 @@
-import { gql } from "@apollo/client";
+import { gql } from '@apollo/client';
 
 export const CREATE_SESSION = gql`
   mutation CreateSession($input: CreateSessionInput!) {
@@ -15,7 +15,6 @@ export const CREATE_SESSION = gql`
     }
   }
 `;
-
 export const UPDATE_SESSION = gql`
   mutation UpdateSession($input: UpdateSessionInput!) {
     updateSession(input: $input) {
@@ -31,7 +30,6 @@ export const UPDATE_SESSION = gql`
     }
   }
 `;
-
 export const DELETE_SESSION = gql`
   mutation DeleteSession($id: ID!) {
     deleteSession(id: $id)

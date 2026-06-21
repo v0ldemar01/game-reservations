@@ -1,91 +1,100 @@
-import { useState } from "react";
-import { useQuery } from "@apollo/client";
-import { Arena, Session } from "../../types.js";
-import { SessionList } from "../session/session-list.js";
-import { SessionForm } from "../session/session-form.js";
-import { TimelineView } from "../session/timeline-view.js";
-import { WeekView } from "../session/week-view.js";
-import { AnalyticsView } from "../analytics/analytics-view.js";
-import { WaitlistPanel } from "../waitlist/waitlist-panel.js";
-import { Button } from "../ui/button.js";
-import { Modal } from "../ui/modal.js";
-import { Spinner } from "../ui/spinner.js";
-import { DEFAULT_PAGE, MAX_PAGE_SIZE } from "@game-reservations/shared";
+import { useQuery } from '@apollo/client';
+import { DEFAULT_PAGE, MAX_PAGE_SIZE } from '@game-reservations/shared';
+import { useState } from 'react';
+
+import { GET_SESSIONS } from '../../graphql/queries/arenas.js';
+import { type Arena, type Session } from '../../types.js';
 import {
   addDaysToDate,
   formatShortDate,
   formatShortDateWithYear,
   localDayBounds,
   mondayOfWeek,
-  todayISO,
-} from "../../utils/date.js";
-import { exportCSV, exportICS } from "../../utils/export.js";
-import { GET_SESSIONS } from "../../graphql/queries/arenas.js";
+  todayISO
+} from '../../utils/date.js';
+import { exportCSV, exportICS } from '../../utils/export.js';
+import { AnalyticsView } from '../analytics/analytics-view.js';
+import { SessionForm } from '../session/session-form.js';
+import { SessionList } from '../session/session-list.js';
+import { TimelineView } from '../session/timeline-view.js';
+import { WeekView } from '../session/week-view.js';
+import { Button } from '../ui/button.js';
+import { Modal } from '../ui/modal.js';
+import { Spinner } from '../ui/spinner.js';
+import { WaitlistPanel } from '../waitlist/waitlist-panel.js';
 
-type ViewMode = "list" | "timeline" | "week" | "analytics" | "waitlist";
+const DAYS_PER_WEEK = 7;
+const WEEK_LAST_DAY_OFFSET = 6;
 
-interface Props {
+interface Properties {
   arena: Arena;
 }
 
-export function ArenaView({ arena }: Props) {
+type ViewMode = 'analytics' | 'list' | 'timeline' | 'waitlist' | 'week';
+
+export function ArenaView({ arena }: Readonly<Properties>) {
   const [date, setDate] = useState<string>(todayISO());
-  const [view, setView] = useState<ViewMode>("list");
+  const [view, setView] = useState<ViewMode>('list');
   const [weekStart, setWeekStart] = useState<string>(() =>
-    mondayOfWeek(todayISO()),
+    mondayOfWeek(todayISO())
   );
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingSession, setEditingSession] = useState<Session | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
+  const [editingSession, setEditingSession] = useState<null | Session>(null);
+  const [exportError, setExportError] = useState<null | string>(null);
 
-  const { dayStart, dayEnd } = localDayBounds(date);
+  const { dayEnd, dayStart } = localDayBounds(date);
 
   const { data: timelineData, loading: timelineLoading } = useQuery<{
     sessions: { items: Session[] };
   }>(GET_SESSIONS, {
+    skip: view !== 'timeline',
     variables: {
       arenaId: arena.id,
-      dayStart,
       dayEnd,
+      dayStart,
       page: DEFAULT_PAGE,
-      pageSize: MAX_PAGE_SIZE,
-    },
-    skip: view !== "timeline",
+      pageSize: MAX_PAGE_SIZE
+    }
   });
 
   const openCreate = () => {
     setEditingSession(null);
     setModalOpen(true);
   };
+
   const openEdit = (s: Session) => {
     setEditingSession(s);
     setModalOpen(true);
   };
+
   const closeModal = () => {
     setModalOpen(false);
     setEditingSession(null);
   };
+
   const handleDaySelect = (d: string) => {
     setDate(d);
-    setView("list");
+    setView('list');
   };
 
-  const handleExport = async (format: "csv" | "ics") => {
+  const handleExport = async (format: 'csv' | 'ics') => {
     setExportError(null);
+
     try {
-      if (format === "csv") await exportCSV(arena.id, dayStart, dayEnd);
-      else await exportICS(arena.id, dayStart, dayEnd);
+      await (format === 'csv'
+        ? exportCSV(arena.id, dayStart, dayEnd)
+        : exportICS(arena.id, dayStart, dayEnd));
     } catch {
-      setExportError("Export failed. Please try again.");
+      setExportError('Export failed. Please try again.');
     }
   };
 
   const viewOptions: { key: ViewMode; label: string }[] = [
-    { key: "list", label: "List" },
-    { key: "timeline", label: "Timeline" },
-    { key: "week", label: "Week" },
-    { key: "analytics", label: "Analytics" },
-    { key: "waitlist", label: "Waitlist" },
+    { key: 'list', label: 'List' },
+    { key: 'timeline', label: 'Timeline' },
+    { key: 'week', label: 'Week' },
+    { key: 'analytics', label: 'Analytics' },
+    { key: 'waitlist', label: 'Waitlist' }
   ];
 
   return (
@@ -100,7 +109,7 @@ export function ArenaView({ arena }: Props) {
             Max 5 concurrent sessions · Open 24/7
           </p>
         </div>
-        <Button onClick={openCreate} className="w-full sm:w-auto">
+        <Button className="w-full sm:w-auto" onClick={openCreate}>
           + New Session
         </Button>
       </div>
@@ -111,13 +120,15 @@ export function ArenaView({ arena }: Props) {
             <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 w-max">
               {viewOptions.map(({ key, label }) => (
                 <button
-                  key={key}
-                  onClick={() => setView(key)}
                   className={`rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
                     view === key
-                      ? "bg-white text-blue-700 shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
+                      ? 'bg-white text-blue-700 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
                   }`}
+                  key={key}
+                  onClick={() => {
+                    setView(key);
+                  }}
                 >
                   {label}
                 </button>
@@ -125,17 +136,21 @@ export function ArenaView({ arena }: Props) {
             </div>
           </div>
 
-          {(view === "list" || view === "timeline") && (
+          {(view === 'list' || view === 'timeline') && (
             <div className="ml-auto flex shrink-0 items-center gap-2">
               <button
-                onClick={() => handleExport("csv")}
                 className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                onClick={() => {
+                  void handleExport('csv');
+                }}
               >
                 ↓ CSV
               </button>
               <button
-                onClick={() => handleExport("ics")}
                 className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                onClick={() => {
+                  void handleExport('ics');
+                }}
               >
                 ↓ iCal
               </button>
@@ -143,45 +158,55 @@ export function ArenaView({ arena }: Props) {
           )}
         </div>
 
-        {(view === "list" || view === "timeline") && (
+        {(view === 'list' || view === 'timeline') && (
           <div className="flex items-center gap-2">
             <label
-              htmlFor="date-picker"
               className="text-sm font-medium text-gray-700"
+              htmlFor="date-picker"
             >
               Date
             </label>
             <input
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               id="date-picker"
+              onChange={(event_) => {
+                setDate(event_.target.value);
+              }}
               type="date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
         )}
 
-        {view === "week" && (
+        {view === 'week' && (
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setWeekStart((w) => addDaysToDate(w, -7))}
               className="rounded-md border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+              onClick={() => {
+                setWeekStart((w) => addDaysToDate(w, -DAYS_PER_WEEK));
+              }}
             >
               ← Prev
             </button>
             <span className="text-sm font-medium text-gray-700">
-              {formatShortDate(weekStart)} –{" "}
-              {formatShortDateWithYear(addDaysToDate(weekStart, 6))}
+              {formatShortDate(weekStart)} –{' '}
+              {formatShortDateWithYear(
+                addDaysToDate(weekStart, WEEK_LAST_DAY_OFFSET)
+              )}
             </span>
             <button
-              onClick={() => setWeekStart((w) => addDaysToDate(w, 7))}
               className="rounded-md border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50"
+              onClick={() => {
+                setWeekStart((w) => addDaysToDate(w, DAYS_PER_WEEK));
+              }}
             >
               Next →
             </button>
             <button
-              onClick={() => setWeekStart(mondayOfWeek(todayISO()))}
               className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50"
+              onClick={() => {
+                setWeekStart(mondayOfWeek(todayISO()));
+              }}
             >
               This week
             </button>
@@ -191,16 +216,16 @@ export function ArenaView({ arena }: Props) {
 
       {exportError && <p className="text-sm text-red-500">{exportError}</p>}
 
-      {view === "list" && (
+      {view === 'list' && (
         <SessionList
           arenaId={arena.id}
-          dayStart={dayStart}
           dayEnd={dayEnd}
+          dayStart={dayStart}
           onEdit={openEdit}
         />
       )}
 
-      {view === "timeline" &&
+      {view === 'timeline' &&
         (timelineLoading ? (
           <div className="flex justify-center py-12">
             <Spinner size="lg" />
@@ -209,18 +234,18 @@ export function ArenaView({ arena }: Props) {
           <TimelineView sessions={timelineData?.sessions.items ?? []} />
         ))}
 
-      {view === "week" && (
+      {view === 'week' && (
         <WeekView
           arenaId={arena.id}
-          weekStart={weekStart}
           onSelectDay={handleDaySelect}
           selectedDate={date}
+          weekStart={weekStart}
         />
       )}
 
-      {view === "analytics" && <AnalyticsView arenaId={arena.id} />}
+      {view === 'analytics' && <AnalyticsView arenaId={arena.id} />}
 
-      {view === "waitlist" && (
+      {view === 'waitlist' && (
         <div>
           <p className="mb-3 text-sm text-gray-500">
             Your waitlist entries for this arena. You'll be notified when a slot
@@ -231,18 +256,18 @@ export function ArenaView({ arena }: Props) {
       )}
 
       <Modal
-        title={editingSession ? "Edit Session" : "New Session"}
-        open={modalOpen}
         onClose={closeModal}
+        open={modalOpen}
+        title={editingSession ? 'Edit Session' : 'New Session'}
       >
         <SessionForm
           arenaId={arena.id}
           date={date}
-          dayStart={dayStart}
           dayEnd={dayEnd}
-          session={editingSession}
-          onSuccess={closeModal}
+          dayStart={dayStart}
           onCancel={closeModal}
+          onSuccess={closeModal}
+          session={editingSession}
         />
       </Modal>
     </div>

@@ -1,35 +1,30 @@
-export type {
-  Arena,
-  Session,
-  SlotSuggestion,
-  AvailabilityResult,
-} from "@game-reservations/shared";
-
-export type Role = "ADMIN" | "PLAYER";
-
-export interface AuthUser {
-  id: string;
-  email: string;
-  role: Role;
-  createdAt: string;
-}
+import { type SlotSuggestion } from '@game-reservations/shared';
 
 export interface AuthPayload {
   token: string;
   user: AuthUser;
 }
-
-import type { SlotSuggestion } from "@game-reservations/shared";
-
+export interface AuthUser {
+  createdAt: string;
+  email: string;
+  id: string;
+  role: Role;
+}
 export interface GraphQLErrorExtensions {
   statusCode?: number;
   suggestedSlots?: SlotSuggestion[];
 }
-
+export type Role = 'ADMIN' | 'PLAYER';
 export interface SessionFormValues {
-  startTime: string;
+  comment: string;
   endTime: string;
   playerName: string;
-  comment: string;
-  status: "ACTIVE" | "COMPLETED";
+  startTime: string;
+  status: 'ACTIVE' | 'COMPLETED';
 }
+export {
+  type Arena,
+  type AvailabilityResult,
+  type Session,
+  type SlotSuggestion
+} from '@game-reservations/shared';

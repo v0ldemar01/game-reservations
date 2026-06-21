@@ -1,19 +1,26 @@
-import { Controller, Get } from "@nestjs/common";
-import { HealthCheck, HealthCheckService } from "@nestjs/terminus";
-import { PrismaHealthIndicator } from "./prisma-health.indicator";
+import { Controller, Get } from '@nestjs/common';
+import {
+  HealthCheck,
+  HealthCheckResult,
+  HealthCheckService,
+  HealthIndicatorResult
+} from '@nestjs/terminus';
 
-@Controller("health")
+import { PrismaHealthIndicator } from './prisma-health.indicator';
+
+@Controller('health')
 export class HealthController {
   constructor(
     private readonly health: HealthCheckService,
-    private readonly prismaIndicator: PrismaHealthIndicator,
+    private readonly prismaIndicator: PrismaHealthIndicator
   ) {}
 
   @Get()
   @HealthCheck()
-  check() {
+  check(): Promise<HealthCheckResult> {
     return this.health.check([
-      () => this.prismaIndicator.isHealthy("database"),
+      (): Promise<HealthIndicatorResult> =>
+        this.prismaIndicator.isHealthy('database')
     ]);
   }
 }

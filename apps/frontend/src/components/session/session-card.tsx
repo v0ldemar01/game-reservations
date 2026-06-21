@@ -1,94 +1,104 @@
-import { useState } from "react";
-import { useMutation } from "@apollo/client";
-import { toast } from "sonner";
-import { Session } from "../../types.js";
-import {
-  formatTime,
-  formatDuration,
-  formatDateTime,
-} from "../../utils/date.js";
-import { DELETE_SESSION } from "../../graphql/mutations/sessions.js";
-import { CANCEL_RECURRING_GROUP } from "../../graphql/mutations/recurring.js";
-import { GET_SESSIONS } from "../../graphql/queries/arenas.js";
-import { Button } from "../ui/button.js";
-import { Modal } from "../ui/modal.js";
+import { useMutation } from '@apollo/client';
+import { useState } from 'react';
+import { toast } from 'sonner';
 
-interface RefetchVars {
+import { CANCEL_RECURRING_GROUP } from '../../graphql/mutations/recurring.js';
+import { DELETE_SESSION } from '../../graphql/mutations/sessions.js';
+import { GET_SESSIONS } from '../../graphql/queries/arenas.js';
+import { type Session } from '../../types.js';
+import {
+  formatDateTime,
+  formatDuration,
+  formatTime
+} from '../../utils/date.js';
+import { Button } from '../ui/button.js';
+import { Modal } from '../ui/modal.js';
+
+interface Properties {
+  onEdit: (session: Session) => void;
+  refetchVars: RefetchVariables;
+  session: Session;
+}
+
+type RecurringSession = Session & { recurringGroupId?: null | number | string };
+
+interface RefetchVariables {
   arenaId: string;
-  dayStart: string;
   dayEnd: string;
+  dayStart: string;
   page: number;
   pageSize: number;
 }
 
-interface Props {
-  session: Session;
-  refetchVars: RefetchVars;
-  onEdit: (session: Session) => void;
-}
-
-export function SessionCard({ session, refetchVars, onEdit }: Props) {
+export function SessionCard({
+  onEdit,
+  refetchVars,
+  session
+}: Readonly<Properties>) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const [deleteSession, { loading: deleteLoading }] = useMutation(
     DELETE_SESSION,
     {
-      refetchQueries: [{ query: GET_SESSIONS, variables: refetchVars }],
-    },
+      refetchQueries: [{ query: GET_SESSIONS, variables: refetchVars }]
+    }
   );
 
   const [cancelGroup, { loading: cancelLoading }] = useMutation(
     CANCEL_RECURRING_GROUP,
     {
-      refetchQueries: [{ query: GET_SESSIONS, variables: refetchVars }],
-    },
+      refetchQueries: [{ query: GET_SESSIONS, variables: refetchVars }]
+    }
   );
 
   const loading = deleteLoading || cancelLoading;
 
   const handleDeleteOne = async () => {
     setConfirmOpen(false);
+
     try {
       await deleteSession({ variables: { id: session.id } });
-    } catch (err: unknown) {
+    } catch (error: unknown) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to cancel session.",
+        error instanceof Error ? error.message : 'Failed to cancel session.'
       );
     }
   };
 
   const handleCancelAll = async () => {
     setConfirmOpen(false);
+
     try {
       await cancelGroup({
         variables: {
-          groupId: (session as any).recurringGroupId,
           futureOnly: false,
-        },
+          groupId: (session as RecurringSession).recurringGroupId
+        }
       });
-    } catch (err: unknown) {
+    } catch (error: unknown) {
       toast.error(
-        err instanceof Error
-          ? err.message
-          : "Failed to cancel recurring group.",
+        error instanceof Error
+          ? error.message
+          : 'Failed to cancel recurring group.'
       );
     }
   };
 
   const handleCancelFuture = async () => {
     setConfirmOpen(false);
+
     try {
       await cancelGroup({
         variables: {
-          groupId: (session as any).recurringGroupId,
           futureOnly: true,
-        },
+          groupId: (session as RecurringSession).recurringGroupId
+        }
       });
-    } catch (err: unknown) {
+    } catch (error: unknown) {
       toast.error(
-        err instanceof Error
-          ? err.message
-          : "Failed to cancel future sessions.",
+        error instanceof Error
+          ? error.message
+          : 'Failed to cancel future sessions.'
       );
     }
   };
@@ -97,7 +107,7 @@ export function SessionCard({ session, refetchVars, onEdit }: Props) {
     new Date(session.startTime).toDateString() !==
     new Date(session.endTime).toDateString();
 
-  const isRecurring = !!(session as any).recurringGroupId;
+  const isRecurring = !!(session as RecurringSession).recurringGroupId;
 
   return (
     <>
@@ -113,7 +123,7 @@ export function SessionCard({ session, refetchVars, onEdit }: Props) {
             <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">
               {formatDuration(session.startTime, session.endTime)}
             </span>
-            {session.status === "COMPLETED" && (
+            {session.status === 'COMPLETED' && (
               <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
                 ✓ Completed
               </span>
@@ -143,13 +153,20 @@ export function SessionCard({ session, refetchVars, onEdit }: Props) {
         </div>
 
         <div className="flex shrink-0 gap-2 sm:ml-4">
-          <Button variant="secondary" onClick={() => onEdit(session)}>
+          <Button
+            onClick={() => {
+              onEdit(session);
+            }}
+            variant="secondary"
+          >
             Edit
           </Button>
           <Button
-            variant="danger"
             loading={loading}
-            onClick={() => setConfirmOpen(true)}
+            onClick={() => {
+              setConfirmOpen(true);
+            }}
+            variant="danger"
           >
             Cancel
           </Button>
@@ -157,17 +174,19 @@ export function SessionCard({ session, refetchVars, onEdit }: Props) {
       </article>
 
       <Modal
-        title="Cancel Session"
+        onClose={() => {
+          setConfirmOpen(false);
+        }}
         open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
+        title="Cancel Session"
       >
         <div className="flex flex-col gap-5">
           <p className="text-sm text-gray-700">
             Are you sure you want to cancel this session?
             {session.playerName && (
               <>
-                {" "}
-                It is booked for{" "}
+                {' '}
+                It is booked for{' '}
                 <span className="font-medium">{session.playerName}</span>.
               </>
             )}
@@ -184,29 +203,31 @@ export function SessionCard({ session, refetchVars, onEdit }: Props) {
             {isRecurring ? (
               <>
                 <Button
-                  variant="danger"
                   loading={loading}
                   onClick={handleDeleteOne}
+                  variant="danger"
                 >
                   Cancel this session only
                 </Button>
                 <Button
-                  variant="danger"
                   loading={loading}
                   onClick={handleCancelFuture}
+                  variant="danger"
                 >
                   Cancel this + all future occurrences
                 </Button>
                 <Button
-                  variant="danger"
                   loading={loading}
                   onClick={handleCancelAll}
+                  variant="danger"
                 >
                   Cancel entire recurring series
                 </Button>
                 <Button
+                  onClick={() => {
+                    setConfirmOpen(false);
+                  }}
                   variant="secondary"
-                  onClick={() => setConfirmOpen(false)}
                 >
                   Keep sessions
                 </Button>
@@ -214,15 +235,17 @@ export function SessionCard({ session, refetchVars, onEdit }: Props) {
             ) : (
               <div className="flex justify-end gap-3">
                 <Button
+                  onClick={() => {
+                    setConfirmOpen(false);
+                  }}
                   variant="secondary"
-                  onClick={() => setConfirmOpen(false)}
                 >
                   Keep Session
                 </Button>
                 <Button
-                  variant="danger"
                   loading={loading}
                   onClick={handleDeleteOne}
+                  variant="danger"
                 >
                   Yes, Cancel It
                 </Button>

@@ -1,35 +1,62 @@
 /// <reference types="vite/client" />
 
+interface ImportMetaEnv {
+  readonly VITE_API_URL?: string;
+  readonly VITE_GRAPHQL_URL?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 declare namespace Intl {
+  type DurationStyle = 'digital' | 'long' | 'narrow' | 'short';
+
+  type DurationUnitStyle = 'long' | 'narrow' | 'short';
+
+  type DurationUnitStyleFull =
+    | '2-digit'
+    | 'long'
+    | 'narrow'
+    | 'numeric'
+    | 'short';
+
   interface DurationFormatOptions {
+    days?: DurationUnitStyle;
+    hours?: DurationUnitStyleFull;
     localeMatcher?: 'best fit' | 'lookup';
-    style?: 'long' | 'short' | 'narrow' | 'digital';
-    years?: 'long' | 'short' | 'narrow';
-    months?: 'long' | 'short' | 'narrow';
-    weeks?: 'long' | 'short' | 'narrow';
-    days?: 'long' | 'short' | 'narrow';
-    hours?: 'long' | 'short' | 'narrow' | 'numeric' | '2-digit';
-    minutes?: 'long' | 'short' | 'narrow' | 'numeric' | '2-digit';
-    seconds?: 'long' | 'short' | 'narrow' | 'numeric' | '2-digit';
+    minutes?: DurationUnitStyleFull;
+    months?: DurationUnitStyle;
+    seconds?: DurationUnitStyleFull;
+    style?: DurationStyle;
+    weeks?: DurationUnitStyle;
+    years?: DurationUnitStyle;
   }
 
   interface DurationInput {
-    years?: number;
-    months?: number;
-    weeks?: number;
     days?: number;
     hours?: number;
-    minutes?: number;
-    seconds?: number;
-    milliseconds?: number;
     microseconds?: number;
+    milliseconds?: number;
+    minutes?: number;
+    months?: number;
     nanoseconds?: number;
+    seconds?: number;
+    weeks?: number;
+    years?: number;
   }
 
   class DurationFormat {
-    constructor(locale?: string | string[], options?: DurationFormatOptions);
-    format(duration: DurationInput): string;
-    formatToParts(duration: DurationInput): Array<{ type: string; value: string }>;
-    resolvedOptions(): Required<DurationFormatOptions> & { locale: string };
+    public constructor(
+      locale?: string | string[],
+      options?: DurationFormatOptions
+    );
+    public format(duration: DurationInput): string;
+    public formatToParts(
+      duration: DurationInput
+    ): Array<{ type: string; value: string }>;
+    public resolvedOptions(): Required<DurationFormatOptions> & {
+      locale: string;
+    };
   }
 }

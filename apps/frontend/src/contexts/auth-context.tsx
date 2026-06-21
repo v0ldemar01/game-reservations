@@ -1,37 +1,29 @@
 import {
   createContext,
-  useContext,
-  useState,
+  type ReactNode,
   useCallback,
-  ReactNode,
-} from "react";
-import { AuthUser, AuthPayload } from "../types.js";
+  useContext,
+  useState
+} from 'react';
 
-const TOKEN_KEY = "game_reservations_token";
-const USER_KEY = "game_reservations_user";
+import { type AuthPayload, type AuthUser } from '../types.js';
+
+const TOKEN_KEY = 'game_reservations_token';
+const USER_KEY = 'game_reservations_user';
 
 interface AuthContextValue {
-  user: AuthUser | null;
-  token: string | null;
-  setAuth: (payload: AuthPayload) => void;
-  logout: () => void;
   isAdmin: boolean;
+  logout: () => void;
+  setAuth: (payload: AuthPayload) => void;
+  token: null | string;
+  user: AuthUser | null;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function readStoredUser(): AuthUser | null {
-  try {
-    const raw = localStorage.getItem(USER_KEY);
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() =>
-    localStorage.getItem(TOKEN_KEY),
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
+  const [token, setToken] = useState<null | string>(() =>
+    localStorage.getItem(TOKEN_KEY)
   );
   const [user, setUser] = useState<AuthUser | null>(readStoredUser);
 
@@ -51,15 +43,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, setAuth, logout, isAdmin: user?.role === "ADMIN" }}
+      value={{ isAdmin: user?.role === 'ADMIN', logout, setAuth, token, user }}
     >
       {children}
     </AuthContext.Provider>
   );
 }
 
+export function readStoredUser(): AuthUser | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+
+    return raw ? (JSON.parse(raw) as AuthUser) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+
+  if (!ctx) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+
   return ctx;
 }

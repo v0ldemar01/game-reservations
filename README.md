@@ -224,15 +224,47 @@ The core challenge is preventing two concurrent requests from exceeding the 5-se
 For every `createSession` / `updateSession`:
 
 1. Open a `ReadCommitted` transaction
-2. Acquire `pg_advisory_xact_lock(arenaId)` — this serializes all writers for the same arena; only one proceeds at a time, the rest queue behind the lock
+2. Acquire `pg_advisory_xact_lock(arenaId)` — serializes all writers for the same arena; only one proceeds at a time, the rest queue behind the lock
 3. Lock overlapping rows with `SELECT id FROM sessions WHERE … FOR UPDATE` — prevents a row-level race if the advisory lock were ever bypassed
 4. `countOverlapping` — if `count >= 5`, throw `ConflictException`; otherwise insert
 
-Because the isolation level is `ReadCommitted`, `countOverlapping` re-reads the latest committed rows at the moment it runs (i.e. after the advisory lock is acquired), not a stale snapshot from transaction start. This is what makes the count correct even under concurrency.
+Because the isolation level is `ReadCommitted`, `countOverlapping` re-reads the latest committed rows at the moment it runs (after the advisory lock is acquired), not a stale snapshot from transaction start. This is what makes the count correct under concurrency.
 
-The advisory lock is **transaction-scoped** (`pg_advisory_xact_lock`) so it is automatically released on commit or rollback — no manual unlock, no risk of a leaked lock if the connection is returned to the pool.
+The advisory lock is **transaction-scoped** (`pg_advisory_xact_lock`) so it is automatically released on commit or rollback — no manual unlock, no risk of a leaked lock.
 
 This is a **TOCTOU-safe** pattern: the check and the write happen within the same serialized, locked context.
+
+#### Why both locks are necessary
+
+Each mechanism covers the gap the other has:
+
+| Scenario                             | Advisory lock | `FOR UPDATE`       |
+| ------------------------------------ | ------------- | ------------------ |
+| 0 existing sessions (phantom insert) | ✅ blocks     | ❌ no rows to lock |
+| Existing rows modified concurrently  | ✅ blocks     | ✅ blocks          |
+| Direct DB write bypassing the app    | ❌ invisible  | ✅ blocks          |
+
+**The phantom insert problem** — `FOR UPDATE` alone is insufficient. It only locks rows that already exist. If two requests arrive when an arena has 0 sessions, `SELECT … FOR UPDATE` returns nothing — no rows, nothing to lock — and both proceed to insert:
+
+```
+T1: SELECT ... FOR UPDATE  ← returns 0 rows, acquires nothing
+T2: SELECT ... FOR UPDATE  ← returns 0 rows, acquires nothing
+T1: INSERT                 ← ok
+T2: INSERT                 ← ok, but now 2 concurrent sessions overlap
+```
+
+This is the **phantom read** problem. Solving it at the database level requires either `SERIALIZABLE` isolation or predicate locks — expensive for a write-heavy booking workload.
+
+**The advisory lock fills this gap** by locking on an arbitrary integer key (the `arenaId`), not on rows. It works even when there are no rows yet:
+
+```
+T1: pg_advisory_xact_lock(arenaId=1)  ← acquires
+T2: pg_advisory_xact_lock(arenaId=1)  ← blocks, regardless of row count
+T1: SELECT count=0, INSERT, COMMIT
+T2: unblocks, re-reads count=1        ← correct
+```
+
+**`FOR UPDATE` provides defense-in-depth** for existing rows — it prevents a concurrent transaction that somehow bypasses the advisory lock (a direct DB write, a migration script, a future code path) from modifying rows mid-transaction.
 
 ### Overlap Predicate
 
@@ -267,3 +299,137 @@ When a slot is unavailable, the service scans forward from all session `end_time
 - **LSP**: `Prisma.TransactionClient` type exactly mirrors the Prisma client interface for seamless use inside transactions.
 - **ISP**: Each DTO contains only the fields relevant to its operation (Create vs Update vs CheckAvailability are separate types). Repository interfaces (`ISessionRepository`, `IRecurringRepository`, `IWaitlistRepository`, `IAnalyticsRepository`) expose only the methods each service actually needs.
 - **DIP**: Services depend on injected repository interfaces (Symbol DI tokens), not concrete Prisma classes. Swapping the storage layer requires only a new class that satisfies the interface — no service changes.
+
+---
+
+## Developer Tooling
+
+The monorepo uses a unified linting and formatting pipeline enforced in CI and on every commit via lint-staged.
+
+### Tools
+
+| Tool                        | Purpose                                                        |
+| --------------------------- | -------------------------------------------------------------- |
+| ESLint 9 (flat config)      | JS/TS static analysis — bugs, style, complexity, import order  |
+| Prettier 3                  | Opinionated code formatter                                     |
+| TypeScript (`tsc --noEmit`) | Full type-checking pass without emitting files                 |
+| ls-lint                     | Enforces consistent file and directory naming conventions      |
+| EditorConfig                | Baseline whitespace and encoding settings for all editors      |
+| lint-staged                 | Runs the appropriate checks on staged files before each commit |
+
+### ESLint plugins active
+
+| Plugin                                    | What it catches                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------- |
+| `@typescript-eslint`                      | TypeScript-specific rules (unsafe types, redundant casts, etc.)     |
+| `@stylistic/eslint-plugin`                | Formatting rules (padding lines, bracket spacing, etc.)             |
+| `eslint-plugin-unicorn`                   | Modern JS best-practices (prefer `.at()`, no `isNaN`, naming, etc.) |
+| `eslint-plugin-sonarjs`                   | Cognitive complexity limit (≤ 18), code smells                      |
+| `eslint-plugin-perfectionist`             | Alphabetical ordering of imports, exports, interfaces, and objects  |
+| `eslint-plugin-import`                    | Import existence, no cycles, exports-last ordering                  |
+| `eslint-plugin-jsdoc`                     | JSDoc consistency (backend only)                                    |
+| `eslint-plugin-require-explicit-generics` | Forces explicit type parameters on generic calls                    |
+
+### Notable ESLint rules enforced
+
+- `TSEnumDeclaration` is **forbidden** — use `const` objects with a matching type alias instead:
+  ```ts
+  const Role = { ADMIN: 'ADMIN', PLAYER: 'PLAYER' } as const;
+  type Role = (typeof Role)[keyof typeof Role];
+  export { Role };
+  ```
+- `ExportNamedDeclaration[declaration!=null]` is **forbidden** — all exports must be bare `export { name }` at the end of the file.
+- `ImportAllDeclaration` / `ExportAllDeclaration` (`import/export *`) are **forbidden**.
+- `max-params` is capped at **3** — extract a params object for functions that need more.
+- `no-console` is **error** — use the NestJS `Logger` on the backend.
+- Cognitive complexity per function is capped at **18**.
+- All module-level members must be sorted alphabetically (imports, exports, interfaces, object keys).
+
+### Prettier settings
+
+```js
+// prettier.config.js
+{
+  arrowParens: 'always',
+  bracketSpacing: true,
+  printWidth: 80,
+  semi: true,
+  singleQuote: true,
+  tabWidth: 2,
+  trailingComma: 'none'
+}
+```
+
+### File naming rules (ls-lint)
+
+| Location          | Rule               |
+| ----------------- | ------------------ |
+| Directories       | `kebab-case`       |
+| All files         | `kebab-case`       |
+| Prisma migrations | `snake_case`       |
+| `.github/` dirs   | `regex:[.]*[a-z]+` |
+
+### Available lint commands
+
+Run from the **repo root**:
+
+```bash
+# Run all linters concurrently
+pnpm lint
+
+# Individual checks
+pnpm lint:js        # ESLint across all apps (type-aware)
+pnpm lint:types     # tsc --noEmit across all apps
+pnpm lint:format    # Prettier check (no writes)
+pnpm lint:files     # ls-lint file naming check
+pnpm lint:editor    # EditorConfig check
+
+# Auto-fix formatting
+pnpm format         # Prettier write across all source files
+```
+
+Run from an **individual app** (`apps/backend` or `apps/frontend`):
+
+```bash
+pnpm lint:js        # ESLint for this app only
+pnpm lint:types     # tsc --noEmit for this app only
+```
+
+### Pre-commit hook (lint-staged)
+
+lint-staged is configured at three levels that compose together.
+
+**Root** (`lint-staged.config.js`) — runs on every staged file regardless of type:
+
+```
+editorconfig-checker  →  ls-lint  →  prettier --check
+```
+
+**Backend** (`apps/backend/lint-staged.config.js`) — additionally on `*.ts`:
+
+```
+eslint src test prisma  →  tsc --noEmit
+```
+
+**Frontend** (`apps/frontend/lint-staged.config.js`) — additionally on `*.ts` / `*.tsx`:
+
+```
+eslint src  →  tsc --noEmit
+```
+
+To wire lint-staged into git hooks, install [Husky](https://typicode.com/husky) or [simple-git-hooks](https://github.com/toplevel-co/simple-git-hooks) and point the `pre-commit` hook at `pnpm exec lint-staged`. Example with simple-git-hooks:
+
+```bash
+pnpm add -Dw simple-git-hooks
+```
+
+```json
+// package.json
+"simple-git-hooks": {
+  "pre-commit": "pnpm exec lint-staged"
+}
+```
+
+```bash
+pnpm exec simple-git-hooks   # activates the hook
+```

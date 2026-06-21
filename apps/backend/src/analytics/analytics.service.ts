@@ -1,60 +1,74 @@
-import { Injectable, Inject } from "@nestjs/common";
-import { Session } from "@prisma/client";
+import { Inject, Injectable } from '@nestjs/common';
+import { Session } from '@prisma/client';
+
 import {
-  IAnalyticsRepository,
   ANALYTICS_REPOSITORY,
-} from "./analytics.repository";
+  type BusiestArenaRow,
+  IAnalyticsRepository
+} from './analytics.repository';
 import {
   AnalyticsResult,
   DayUtilization,
-  HourlyCount,
-} from "./models/analytics.model";
-
-const MS_PER_MINUTE = 60_000;
-const MS_PER_HOUR = 3_600_000;
-const MS_PER_DAY = 86_400_000;
-const MINUTES_PER_DAY = 24 * 60;
-const HOURS_PER_DAY = 24;
+  HourlyCount
+} from './models/analytics.model';
 
 @Injectable()
 export class AnalyticsService {
+  private static readonly HOURS_PER_DAY = 24;
+
+  private static readonly ISO_DATE_LENGTH = 10; // 'YYYY-MM-DD'.length
+
+  private static readonly MAX_UTILIZATION_PERCENT = 100;
+
+  private static readonly MINUTES_PER_DAY = 1440; // 24 * 60
+
+  private static readonly MS_PER_DAY = 86_400_000;
+
+  private static readonly MS_PER_HOUR = 3_600_000;
+
+  private static readonly MS_PER_MINUTE = 60_000;
+
   constructor(
     @Inject(ANALYTICS_REPOSITORY)
-    private readonly analyticsRepo: IAnalyticsRepository,
+    private readonly analyticsRepo: IAnalyticsRepository
   ) {}
 
   async arenaAnalytics(
     arenaId: number,
     from: Date,
-    to: Date,
+    to: Date
   ): Promise<AnalyticsResult> {
     const sessions = await this.analyticsRepo.findSessionsInRange(
       arenaId,
       from,
-      to,
+      to
     );
 
     return {
       dailyUtilization: this.computeDailyUtilization(sessions, from, to),
-      peakHours: this.computePeakHours(sessions, from, to),
+      peakHours: this.computePeakHours(sessions, from, to)
     };
   }
 
-  async busiestArenas(from: Date, to: Date, limit: number) {
+  busiestArenas(
+    from: Date,
+    to: Date,
+    limit: number
+  ): Promise<BusiestArenaRow[]> {
     return this.analyticsRepo.busiestArenas(from, to, limit);
   }
 
   private computeDailyUtilization(
     sessions: Session[],
     from: Date,
-    to: Date,
+    to: Date
   ): DayUtilization[] {
     const minutesByDay = new Map<string, number>();
 
     for (const session of sessions) {
       const clampedStart = Math.max(
         session.startTime.getTime(),
-        from.getTime(),
+        from.getTime()
       );
       const clampedEnd = Math.min(session.endTime.getTime(), to.getTime());
 
@@ -63,16 +77,18 @@ export class AnalyticsService {
 
       while (dayCursor.getTime() < clampedEnd) {
         const dayStartMs = dayCursor.getTime();
-        const dayEndMs = dayStartMs + MS_PER_DAY;
+        const dayEndMs = dayStartMs + AnalyticsService.MS_PER_DAY;
         const overlapMs =
           Math.min(clampedEnd, dayEndMs) - Math.max(clampedStart, dayStartMs);
 
         if (overlapMs > 0) {
-          const key = dayCursor.toISOString().slice(0, 10);
+          const key = dayCursor
+            .toISOString()
+            .slice(0, AnalyticsService.ISO_DATE_LENGTH);
           minutesByDay.set(
             key,
             (minutesByDay.get(key) ?? 0) +
-              Math.round(overlapMs / MS_PER_MINUTE),
+              Math.round(overlapMs / AnalyticsService.MS_PER_MINUTE)
           );
         }
 
@@ -80,14 +96,15 @@ export class AnalyticsService {
       }
     }
 
-    return Array.from(minutesByDay.entries())
+    return [...minutesByDay.entries()]
       .map(([date, bookedMinutes]) => ({
-        date,
         bookedMinutes,
+        date,
         utilizationPercent: Math.min(
-          100,
-          (bookedMinutes / MINUTES_PER_DAY) * 100,
-        ),
+          AnalyticsService.MAX_UTILIZATION_PERCENT,
+          (bookedMinutes / AnalyticsService.MINUTES_PER_DAY) *
+            AnalyticsService.MAX_UTILIZATION_PERCENT
+        )
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
   }
@@ -95,9 +112,12 @@ export class AnalyticsService {
   private computePeakHours(
     sessions: Session[],
     from: Date,
-    to: Date,
+    to: Date
   ): HourlyCount[] {
-    const countsByHour = new Array<number>(HOURS_PER_DAY).fill(0);
+    const countsByHour = Array.from(
+      { length: AnalyticsService.HOURS_PER_DAY },
+      () => 0
+    );
 
     for (const session of sessions) {
       const cursor = new Date(session.startTime);
@@ -107,10 +127,11 @@ export class AnalyticsService {
         if (cursor >= from && cursor < to) {
           countsByHour[cursor.getHours()]++;
         }
-        cursor.setTime(cursor.getTime() + MS_PER_HOUR);
+
+        cursor.setTime(cursor.getTime() + AnalyticsService.MS_PER_HOUR);
       }
     }
 
-    return countsByHour.map((count, hour) => ({ hour, count }));
+    return countsByHour.map((count, hour) => ({ count, hour }));
   }
 }

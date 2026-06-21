@@ -1,22 +1,37 @@
-import { ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect } from 'react';
 
-interface Props {
-  title: string;
-  open: boolean;
-  onClose: () => void;
+interface Properties {
   children: ReactNode;
+  onClose: () => void;
+  open: boolean;
+  title: string;
 }
 
-export function Modal({ title, open, onClose, children }: Props) {
+export function Modal({
+  children,
+  onClose,
+  open,
+  title
+}: Readonly<Properties>) {
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const handleKey = (event_: KeyboardEvent) => {
+      if (event_.key === 'Escape') {
+        onClose();
+      }
     };
-    if (open) document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
+
+    if (open) {
+      document.addEventListener('keydown', handleKey);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -25,9 +40,9 @@ export function Modal({ title, open, onClose, children }: Props) {
         <div className="flex items-center justify-between border-b px-6 py-4">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button
-            onClick={onClose}
-            className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
             aria-label="Close"
+            className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            onClick={onClose}
           >
             ✕
           </button>

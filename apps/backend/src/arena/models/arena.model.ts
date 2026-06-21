@@ -1,13 +1,13 @@
-import { ObjectType, Field, ID } from "@nestjs/graphql";
+import { Field, ID, ObjectType } from '@nestjs/graphql';
 
 @ObjectType()
 export class ArenaModel {
+  @Field()
+  createdAt!: Date;
+
   @Field(() => ID)
   id!: number;
 
   @Field()
   name!: string;
-
-  @Field()
-  createdAt!: Date;
 }

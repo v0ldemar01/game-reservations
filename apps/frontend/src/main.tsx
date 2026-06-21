@@ -1,13 +1,14 @@
+import { ApolloProvider } from '@apollo/client';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { ApolloProvider } from '@apollo/client';
 import { Toaster } from 'sonner';
-import { apolloClient } from './graphql/client.js';
-import { AuthProvider } from './contexts/auth-context.js';
+
 import App from './app.js';
+import { AuthProvider } from './contexts/auth-context.js';
+import { apolloClient } from './graphql/client.js';
 import './index.css';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+ReactDOM.createRoot(document.querySelector('#root') as HTMLElement).render(
   <React.StrictMode>
     <ApolloProvider client={apolloClient}>
       <AuthProvider>
@@ -15,5 +16,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       </AuthProvider>
     </ApolloProvider>
     <Toaster position="top-right" richColors />
-  </React.StrictMode>,
+  </React.StrictMode>
 );
