@@ -120,4 +120,36 @@ describe('SessionService — concurrency (integration)', () => {
 
     await cleanup(database, arenaId);
   }, 30_000);
+
+  it('allows a spanning session when two adjacent full windows share no peak moment', async () => {
+    // 4 sessions [A, B) + 4 sessions [B, C) → peak is 4 at any instant.
+    // A session spanning [A, C) should be the 5th and must succeed.
+    const arenaId = await setupTestArena(database);
+
+    const A = new Date('2099-03-01T09:00:00Z');
+    const B = new Date('2099-03-01T10:00:00Z');
+    const C = new Date('2099-03-01T11:00:00Z');
+
+    await Promise.all([
+      ...Array.from({ length: 4 }, () =>
+        service.createSession({ arenaId, startTime: A, endTime: B })
+      ),
+      ...Array.from({ length: 4 }, () =>
+        service.createSession({ arenaId, startTime: B, endTime: C })
+      )
+    ]);
+
+    // Spanning session: peak of existing sessions at any point is 4 → must be allowed.
+    const spanning = await service.createSession({
+      arenaId,
+      startTime: A,
+      endTime: C
+    });
+
+    expect(spanning).toBeDefined();
+    expect(spanning.startTime).toEqual(A);
+    expect(spanning.endTime).toEqual(C);
+
+    await cleanup(database, arenaId);
+  }, 30_000);
 });

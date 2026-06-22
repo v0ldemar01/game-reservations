@@ -87,7 +87,7 @@ export class SessionRepository implements ISessionRepository {
     const [row] = await this.client(tx).$queryRaw<PeakRow[]>`
       WITH critical_times AS (
         SELECT ${startTime}::timestamptz AS t
-        UNION ALL
+        UNION
         SELECT start_time FROM sessions
         WHERE arena_id   = ${arenaId}
           AND status     = ${SessionStatus.ACTIVE}::"SessionStatus"
